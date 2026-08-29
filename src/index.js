@@ -9,9 +9,10 @@
  *
  * Протокол (JSON):
  *   клиент → сервер:  { type: 'sync', event: { type, currentTime, rate, ts } }
+ *                     { type: 'keepalive' }
  *   сервер → клиент:  { type: 'joined', code, state }
  *                     { type: 'peer-joined' | 'peer-left', peers }
- *                     { type: 'sync', event }   — событие от другого участника
+ *                     { type: 'sync', event }   — событие или heartbeat
  */
 
 import http from 'node:http';
@@ -21,6 +22,8 @@ import { RoomRegistry } from './rooms.js';
 const PORT = Number(process.env.PORT || 8787);
 const MAX_PEERS = 2; // MVP: просмотр вдвоём
 const SWEEP_INTERVAL_MS = 60 * 60 * 1000;
+const VIDEO_HEARTBEAT_MS = 3 * 1000;
+const TRANSPORT_HEARTBEAT_MS = 30 * 1000;
 
 process.title = 'synodic-serve'; // чтобы deploy.sh мог делать pkill -x synodic-serve
 
@@ -43,13 +46,34 @@ const wss = new WebSocketServer({ noServer: true });
 
 server.on('upgrade', (req, socket, head) => {
   const url = new URL(req.url, `http://${req.headers.host}`);
-  const room = url.pathname === '/ws' ? registry.get(url.searchParams.get('room')) : null;
-  if (!room) return socket.destroy(); // нет такой комнаты
+  if (url.pathname !== '/ws') return socket.destroy();
+  const room = registry.get(url.searchParams.get('room'));
 
-  wss.handleUpgrade(req, socket, head, (ws) => room.join(ws, MAX_PEERS));
+  wss.handleUpgrade(req, socket, head, (ws) => {
+    if (!room) {
+      ws.close(4004, 'room not found');
+      return;
+    }
+    ws.isAlive = true;
+    ws.on('pong', () => {
+      ws.isAlive = true;
+    });
+    room.join(ws, MAX_PEERS);
+  });
 });
 
 setInterval(() => registry.sweep(), SWEEP_INTERVAL_MS).unref();
+setInterval(() => registry.heartbeat(), VIDEO_HEARTBEAT_MS).unref();
+setInterval(() => {
+  for (const client of wss.clients) {
+    if (!client.isAlive) {
+      client.terminate();
+      continue;
+    }
+    client.isAlive = false;
+    client.ping();
+  }
+}, TRANSPORT_HEARTBEAT_MS).unref();
 
 server.listen(PORT, () => {
   console.log(`[synodic-serve] listening on :${PORT}`);

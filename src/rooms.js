@@ -3,6 +3,7 @@
 import crypto from 'node:crypto';
 
 const IDLE_ROOM_TTL_MS = 12 * 60 * 60 * 1000; // пустые комнаты прибираем через 12 ч
+const EVENT_TYPES = new Set(['play', 'pause', 'seek', 'ratechange']);
 
 export class Room {
   constructor(code) {
@@ -21,7 +22,12 @@ export class Room {
     }
     this.lastSeen = Date.now();
     this.peers.add(ws);
-    ws.send(JSON.stringify({ type: 'joined', code: this.code, state: this.state }));
+    ws.send(JSON.stringify({
+      type: 'joined',
+      code: this.code,
+      peers: this.peers.size,
+      state: this.snapshot(),
+    }));
     this.broadcast({ type: 'peer-joined', peers: this.peers.size }, ws);
 
     ws.on('message', (raw) => {
@@ -32,8 +38,10 @@ export class Room {
         return; // мусорные кадры игнорируем
       }
       if (message.type === 'sync' && message.event) {
-        this.applyEvent(message.event);
-        this.broadcast(message, ws); // всем, кроме автора
+        const event = normalizeEvent(message.event);
+        if (!event) return;
+        this.applyEvent(event);
+        this.broadcast({ type: 'sync', event }, ws); // всем, кроме автора
       }
     });
 
@@ -53,12 +61,50 @@ export class Room {
     this.lastSeen = this.state.updatedAt;
   }
 
+  snapshot(now = Date.now()) {
+    const state = { ...this.state };
+    if (state.isPlaying && state.updatedAt > 0) {
+      state.currentTime += (now - state.updatedAt) / 1000 * state.rate;
+      state.updatedAt = now;
+    }
+    return state;
+  }
+
+  heartbeat(now = Date.now()) {
+    if (!this.state.isPlaying || this.peers.size === 0) return;
+    const state = this.snapshot(now);
+    this.broadcast({
+      type: 'sync',
+      event: {
+        type: 'heartbeat',
+        currentTime: state.currentTime,
+        rate: state.rate,
+        ts: now,
+      },
+    });
+  }
+
   broadcast(message, except = null) {
     const raw = JSON.stringify(message);
     for (const peer of this.peers) {
       if (peer !== except && peer.readyState === peer.OPEN) peer.send(raw);
     }
   }
+}
+
+function normalizeEvent(event) {
+  if (!event || !EVENT_TYPES.has(event.type)) return null;
+  if (!Number.isFinite(event.currentTime) || event.currentTime < 0) return null;
+  if (event.rate !== undefined &&
+      (!Number.isFinite(event.rate) || event.rate <= 0)) return null;
+
+  const normalized = {
+    type: event.type,
+    currentTime: event.currentTime,
+  };
+  if (event.rate !== undefined) normalized.rate = event.rate;
+  if (Number.isFinite(event.ts)) normalized.ts = event.ts;
+  return normalized;
 }
 
 export class RoomRegistry {
@@ -91,5 +137,9 @@ export class RoomRegistry {
         this.rooms.delete(code);
       }
     }
+  }
+
+  heartbeat(now = Date.now()) {
+    for (const room of this.rooms.values()) room.heartbeat(now);
   }
 }
