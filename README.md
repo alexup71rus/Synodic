@@ -46,16 +46,24 @@ node ≥ 18.
     scripts/deploy.sh
 
 Что делает: rsync исходников в `~/Documents/Projects/SynodicServe` →
-`npm ci --omit=dev` → перезапуск `node src/index.js` (nohup, лог в `logs/`) →
-health-check → smoke-тест. Скрипт можно запускать из любой папки. Цель
+`npm ci --omit=dev` → установка/перезапуск user-systemd unit → health-check →
+smoke-тест. Скрипт можно запускать из любой папки. Цель
 переопределяется переменными `SYNODIC_REMOTE`, `SYNODIC_DIR`, `PORT`.
+
+Unit `synodic-serve.service` включён в автозапуск и использует
+`Restart=always`. Код не обновляется автоматически: новая версия появляется
+только после следующего запуска `scripts/deploy.sh`. Проверка состояния и логов:
+
+    ssh khdr@khodyr.netcraze.pro 'systemctl --user status synodic-serve --no-pager'
+    ssh khdr@khodyr.netcraze.pro 'journalctl --user -u synodic-serve -n 50 --no-pager'
 
 Не забыть при первом деплое: открыть порт (ufw) и, если напарник не в локальной
 сети, пробросить порт на роутере (сейчас снаружи открыт только SSH).
 
-Позже: systemd-юнит или docker вместо nohup, TLS-терминация.
+Позже: TLS-терминация.
 
 ## Структура
 
 - `src/index.js` — HTTP + WebSocket, точка входа
 - `src/rooms.js` — комнаты: участники, снапшот состояния, рассылка, уборка пустых
+- `systemd/synodic-serve.service` — шаблон постоянного user-systemd сервиса

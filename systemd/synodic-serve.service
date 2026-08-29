@@ -1,0 +1,16 @@
+[Unit]
+Description=Synodic room synchronization server
+Wants=network-online.target
+After=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=@WORKING_DIRECTORY@
+Environment=PORT=@PORT@
+ExecStart=/usr/bin/env node src/index.js
+Restart=always
+RestartSec=3
+TimeoutStopSec=10
+
+[Install]
+WantedBy=default.target
