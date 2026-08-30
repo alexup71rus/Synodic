@@ -8,6 +8,9 @@
   const elements = {
     connection: $('connection'),
     connectionLabel: $('connection-label'),
+    info: $('info'),
+    infoModal: $('info-modal'),
+    infoClose: $('info-close'),
     startView: $('start-view'),
     roomView: $('room-view'),
     videoUrl: $('video-url'),
@@ -15,8 +18,6 @@
     create: $('create'),
     code: $('code'),
     joinForm: $('join-form'),
-    roomEyebrow: $('room-eyebrow'),
-    roomTitle: $('room-title'),
     roomCode: $('room-code'),
     copy: $('copy'),
     peerState: $('peer-state'),
@@ -40,6 +41,7 @@
   let adapter = null;
   let armed = false;
   let peerOnline = false;
+  let peerReady = false;
   let feedbackTimer = null;
 
   init();
@@ -52,6 +54,7 @@
           code: elements.roomCode.textContent,
           armed,
           peerOnline,
+          peerReady,
           adapterTime: adapter ? adapter.getTime() : null,
           adapterPaused: adapter ? adapter.isPaused() : null,
           expected: engine ? engine.expectedNow() : null,
@@ -102,8 +105,7 @@
       elements.changeVideoForm.hidden = !hidden;
       if (hidden) elements.newVideoUrl.focus();
     });
-    elements.changeVideoForm.addEventListener('submit', (event) => {
-      event.preventDefault();
+    elements.changeVideoForm.addEventListener('submit', (event) => {      event.preventDefault();
       const source = SynodicLinks.parse(elements.newVideoUrl.value);
       if (!source) {
         showError('Не получилось распознать ссылку');
@@ -114,6 +116,12 @@
       elements.newVideoUrl.value = '';
       applyVideoChange(source, { local: true });
       showFeedback('Включаем новое видео', 'success');
+    });
+
+    elements.info.addEventListener('click', () => elements.infoModal.showModal());
+    elements.infoClose.addEventListener('click', () => elements.infoModal.close());
+    elements.infoModal.addEventListener('click', (event) => {
+      if (event.target === elements.infoModal) elements.infoModal.close();
     });
 
     restoreSession();
@@ -135,11 +143,7 @@
       if (connected) setConnection('online', 'На связи');
       else if (reconnecting) setConnection('error', 'Нет связи');
       else setConnection('idle', 'Готов');
-      if (reconnecting) {
-        elements.roomEyebrow.textContent = 'Комната сохранена';
-        elements.roomTitle.textContent = 'Скоро вернёмся';
-        setPeerState(false, 'Переподключаемся…');
-      }
+      if (reconnecting) setPeerState(false, 'Переподключаемся…');
     });
 
     connection.on('joined', async (message) => {
@@ -150,8 +154,6 @@
       // если напарник уже в комнате, peer-joined нам не придёт
       if (Number(message.peers) > 1) {
         peerOnline = true;
-        elements.roomEyebrow.textContent = 'Вы вдвоём';
-        elements.roomTitle.textContent = 'Можно начинать';
         setPeerState(true, 'Оба на месте');
       }
 
@@ -169,19 +171,18 @@
 
     connection.on('peer', ({ online }) => {
       peerOnline = online;
-      if (online) {
-        elements.roomEyebrow.textContent = 'Вы вдвоём';
-        elements.roomTitle.textContent = 'Можно начинать';
-        setPeerState(true, 'Оба на месте');
-      } else {
-        elements.roomEyebrow.textContent = 'Ваша комната';
-        elements.roomTitle.textContent = 'Осталось дождаться второго';
+      if (online) setPeerState(true, 'Оба на месте');
+      else {
+        peerReady = false;
         setPeerState(false, 'Ждём второго участника');
       }
     });
 
     connection.on('peerReady', () => {
-      if (peerOnline) showFeedback('Напарник готов к просмотру', 'success');
+      if (!peerOnline) return;
+      peerReady = true;
+      if (armed) maybeStartTogether();
+      else showFeedback('Второй готов — нажмите «Смотреть вместе»', 'success');
     });
 
     connection.on('event', (event) => engine.handleRemote(event));
@@ -229,7 +230,18 @@
     elements.armOverlay.hidden = true;
     connection?.sendReady();
     engine?.arm();
-    showFeedback('Всё синхронно: пауза, перемотка и скорость — общие', 'success');
+    maybeStartTogether();
+  }
+
+  /**
+   * Одновременный старт: когда оба нажали «Смотреть вместе», а видео ещё
+   * не начали, — запускаем у себя; событие play уедет напарнику
+   * (задержка ≈ полпинга, у нас выходило 20–90 мс).
+   */
+  function maybeStartTogether() {
+    if (!armed || !peerReady || !adapter || !engine) return;
+    if (engine.expectedNow().playing) return; // уже смотрим
+    engine.startTogether();
   }
 
   function leaveRoom({ quiet } = {}) {
@@ -275,8 +287,11 @@
     elements.armOverlay.hidden = false;
     elements.armOverlay.classList.toggle('urgent', !!urgent);
     if (urgent) {
-      elements.armTitle.textContent = 'Напарник уже смотрит';
-      elements.armText.textContent = 'Нажмите кнопку — добавимся на той же секунде.';
+      elements.armTitle.textContent = 'Второй уже смотрит';
+      elements.armText.textContent = 'Нажмите — продолжим с той же секунды.';
+    } else {
+      elements.armTitle.textContent = 'Всё готово';
+      elements.armText.textContent = 'Когда оба нажмут — начнём одновременно.';
     }
   }
 

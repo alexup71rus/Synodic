@@ -59,6 +59,15 @@ const SynodicSync = (() => {
       this.reconcile();
     }
 
+    /**
+     * Одновременный старт: играем «как пользователь» — без эхо-защиты,
+     * чтобы возникшее событие play ушло напарнику.
+     */
+    startTogether() {
+      if (!this.adapter || !this.adapter.isPaused()) return;
+      this.adapter.play();
+    }
+
     /** Согласовать плеер с ожидаемым состоянием комнаты (вход / кнопка). */
     reconcile() {
       if (!this.adapter) return;

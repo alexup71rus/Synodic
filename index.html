@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>Synodic — кино на двоих</title>
+    <title>Synodic</title>
     <meta name="description" content="Совместный просмотр видео: вставьте ссылку, создайте комнату и смотрите синхронно." />
     <link rel="icon" href="icons/icon.svg" type="image/svg+xml" />
     <link rel="apple-touch-icon" href="icons/icon128.png" />
@@ -22,14 +22,14 @@
             <circle cx="96" cy="35" r="4" fill="#f7df9b" />
             <circle cx="102" cy="55" r="2.5" fill="#c7bfae" />
           </svg>
-          <div>
-            <h1>Synodic</h1>
-            <p>кино на двоих</p>
-          </div>
+          <h1>Synodic</h1>
         </div>
-        <div id="connection" class="connection" data-tone="idle">
-          <span class="connection-dot" aria-hidden="true"></span>
-          <span id="connection-label">Готов</span>
+        <div class="topbar-right">
+          <button id="info" class="icon-button" type="button" aria-label="Как это работает">?</button>
+          <div id="connection" class="connection" data-tone="idle">
+            <span class="connection-dot" aria-hidden="true"></span>
+            <span id="connection-label">Готов</span>
+          </div>
         </div>
       </header>
 
@@ -43,32 +43,28 @@
               <span class="window-star star-two"></span>
               <span class="window-sill"></span>
             </div>
-            <h2>Как будто вы рядом</h2>
-            <p>
-              Вставьте ссылку на видео, создайте комнату и отправьте код второму.
-              Пауза, перемотка и продолжение будут общими.
-            </p>
+            <h2>Смотрите вместе</h2>
+            <p>Пауза, перемотка и скорость — общие.</p>
           </div>
 
-          <form id="create-form" class="create-form">
+          <form id="create-form" class="create-form" novalidate>
             <label class="sr-only" for="video-url">Ссылка на видео</label>
             <input
               id="video-url"
               class="url-input"
-              type="url"
+              type="text"
               inputmode="url"
               autocomplete="off"
               spellcheck="false"
-              placeholder="https://www.youtube.com/watch?v=… или https://rutube.ru/video/…"
+              placeholder="Ссылка на видео — YouTube или Rutube"
               aria-describedby="feedback"
             />
             <button id="create" class="button button-primary" type="submit">Создать комнату</button>
           </form>
-          <p class="hint">Поддерживаются YouTube и Rutube — обычная ссылка или embed.</p>
 
-          <div class="divider"><span>или войдите по коду</span></div>
+          <div class="divider"><span>или войти по коду</span></div>
 
-          <form id="join-form" class="join-form">
+          <form id="join-form" class="join-form" novalidate>
             <label class="sr-only" for="code">Код комнаты</label>
             <input
               id="code"
@@ -87,9 +83,9 @@
         <!-- ─── Комната ─────────────────────────────────────────────────── -->
         <section id="room-view" class="view room-view" hidden>
           <div class="room-head">
-            <div class="room-heading">
-              <p id="room-eyebrow" class="eyebrow">Ваша комната</p>
-              <h2 id="room-title">Осталось дождаться второго</h2>
+            <div id="peer-state" class="peer-state room-status">
+              <span class="pulse" aria-hidden="true"></span>
+              <span id="peer-label">Ждём второго участника</span>
             </div>
             <button id="leave" class="button button-quiet" type="button">Покинуть</button>
           </div>
@@ -99,10 +95,6 @@
               <span id="room-code">····</span>
               <span class="copy-label"><span aria-hidden="true">⧉</span> Скопировать ссылку-приглашение</span>
             </button>
-            <div id="peer-state" class="peer-state">
-              <span class="pulse" aria-hidden="true"></span>
-              <span id="peer-label">Ждём второго участника</span>
-            </div>
           </div>
 
           <div class="stage">
@@ -110,8 +102,8 @@
             <div id="arm-overlay" class="arm-overlay" hidden>
               <div class="arm-panel">
                 <div class="arm-moon" aria-hidden="true"></div>
-                <h3 id="arm-title">Комната готова</h3>
-                <p id="arm-text">Нажмите кнопку — и дальше всё будет синхронно.</p>
+                <h3 id="arm-title">Всё готово</h3>
+                <p id="arm-text">Когда оба нажмут — начнём одновременно.</p>
                 <button id="arm" class="button button-primary" type="button">Смотреть вместе</button>
               </div>
             </div>
@@ -119,15 +111,15 @@
 
           <div class="room-actions">
             <button id="change-video-toggle" class="button button-quiet" type="button">Сменить видео</button>
-            <form id="change-video-form" class="change-video-form" hidden>
+            <form id="change-video-form" class="change-video-form" hidden novalidate>
               <label class="sr-only" for="new-video-url">Новая ссылка на видео</label>
               <input
                 id="new-video-url"
-                type="url"
+                type="text"
                 inputmode="url"
                 autocomplete="off"
                 spellcheck="false"
-                placeholder="Новая ссылка YouTube или Rutube"
+                placeholder="Новая ссылка"
               />
               <button class="button button-secondary" type="submit">Включить</button>
             </form>
@@ -136,11 +128,28 @@
 
         <p id="feedback" class="feedback" role="status" aria-live="polite" hidden></p>
       </main>
-
-      <footer class="foot">
-        <p>Synodic синхронизирует только состояние плеера — видео каждый смотрит напрямую с YouTube или Rutube.</p>
-      </footer>
     </div>
+
+    <!-- ─── Инфо ──────────────────────────────────────────────────────── -->
+    <dialog id="info-modal" class="info-dialog" aria-labelledby="info-title">
+      <button class="info-close" id="info-close" type="button" aria-label="Закрыть">✕</button>
+      <h3 id="info-title">Как это работает</h3>
+      <ol class="info-steps">
+        <li>Вставьте ссылку на видео и создайте комнату.</li>
+        <li>Отправьте напарнику код или ссылку-приглашение.</li>
+        <li>Когда оба нажмут «Смотреть вместе», видео запустится одновременно.
+            Дальше пауза, перемотка и скорость — общие.</li>
+      </ol>
+      <h4>Поддерживаются</h4>
+      <p>YouTube и Rutube: обычные ссылки, ссылки «поделиться» и embed.</p>
+      <h4>Полезно знать</h4>
+      <ul class="info-notes">
+        <li>видео каждый грузит напрямую с YouTube или Rutube — синхронизируется только состояние плеера;</li>
+        <li>реклама не синхронизируется: если у одного стоит блокировщик, просмотр разойдётся — вернёт пауза на место;</li>
+        <li>полноэкранный режим у каждого свой;</li>
+        <li>в комнате двое, код можно вводить в любом регистре.</li>
+      </ul>
+    </dialog>
 
     <script src="js/protocol.js"></script>
     <script src="js/links.js"></script>

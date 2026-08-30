@@ -288,7 +288,10 @@ const SynodicPlayers = (() => {
     setRate(r) { this.post('player:setPlaybackSpeed', { speed: r }); }
 
     isPaused() {
-      return this.lastState !== 'playing';
+      // buffering/seeking — не пауза: Rutube может «залипнуть» в них
+      // и на играющем видео, не говоря уже о старте
+      return this.lastState === 'pause' || this.lastState === 'paused' ||
+        this.lastState === 'completed';
     }
 
     getTime() {
