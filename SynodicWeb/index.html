@@ -74,10 +74,12 @@
               <button id="create" class="button button-primary create-submit" type="submit">Создать</button>
             </form>
 
-            <details id="join-disclosure" class="join-disclosure">
-              <summary>Войти по коду</summary>
+            <div id="join-disclosure" class="join-disclosure">
+              <button id="join-toggle" class="join-toggle" type="button" aria-expanded="false" aria-controls="join-form">
+                Войти по коду
+              </button>
               <form id="join-form" class="join-form" novalidate>
-                <label class="sr-only" for="code">Код комнаты</label>
+                <label class="join-label" for="code">Код комнаты</label>
                 <input
                   id="code"
                   class="code-input"
@@ -85,12 +87,12 @@
                   maxlength="4"
                   autocomplete="off"
                   spellcheck="false"
-                  placeholder="Код комнаты"
+                  placeholder="ABCD"
                   aria-describedby="start-feedback"
                 />
                 <button id="join" class="button button-secondary" type="submit">Войти</button>
               </form>
-            </details>
+            </div>
             <p id="start-feedback" class="feedback start-feedback" role="status" aria-live="polite" hidden></p>
           </div>
         </section>

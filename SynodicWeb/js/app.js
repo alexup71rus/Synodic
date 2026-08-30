@@ -20,6 +20,7 @@
     create: $('create'),
     code: $('code'),
     joinDisclosure: $('join-disclosure'),
+    joinToggle: $('join-toggle'),
     joinForm: $('join-form'),
     roomCode: $('room-code'),
     copy: $('copy'),
@@ -94,6 +95,17 @@
         if (code.length !== 4) throw new Error('Введите код из четырёх символов');
         openRoom(code, null);
       });
+    });
+
+    elements.joinToggle.addEventListener('click', (event) => {
+      event.preventDefault();
+      if (elements.joinDisclosure.classList.contains('is-visible')) closeJoinDisclosure();
+      else openJoinDisclosure();
+    });
+    elements.joinForm.addEventListener('keydown', (event) => {
+      if (event.key !== 'Escape') return;
+      closeJoinDisclosure();
+      elements.joinToggle.focus();
     });
 
     elements.code.addEventListener('input', () => {
@@ -436,8 +448,18 @@
     elements.connection.hidden = true;
     elements.videoUrl.value = '';
     elements.code.value = '';
-    elements.joinDisclosure.open = false;
+    closeJoinDisclosure();
     clearPlayerHost();
+  }
+
+  function openJoinDisclosure() {
+    elements.joinDisclosure.classList.add('is-visible');
+    elements.joinToggle.setAttribute('aria-expanded', 'true');
+  }
+
+  function closeJoinDisclosure() {
+    elements.joinDisclosure.classList.remove('is-visible');
+    elements.joinToggle.setAttribute('aria-expanded', 'false');
   }
 
   function setConnection(tone, label = '') {
