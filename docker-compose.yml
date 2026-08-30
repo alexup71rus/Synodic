@@ -5,6 +5,9 @@ services:
   app:
     build: .
     restart: unless-stopped
+    environment:
+      # витрина постеров на старте (необязательно): бесплатный ключ themoviedb.org
+      - TMDB_TOKEN=${TMDB_TOKEN:-}
     ports:
       - "127.0.0.1:8787:8787"
 

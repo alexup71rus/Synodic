@@ -30,6 +30,8 @@ const SWEEP_INTERVAL_MS = 60 * 60 * 1000;
 const VIDEO_HEARTBEAT_MS = 3 * 1000;
 const TRANSPORT_HEARTBEAT_MS = 30 * 1000;
 const BODY_LIMIT = 4 * 1024;
+const POSTERS_CACHE_MS = 12 * 60 * 60 * 1000;
+const POSTERS_COUNT = 6;
 
 process.title = 'synodic-serve'; // чтобы deploy.sh мог делать pkill -x synodic-serve
 
@@ -47,6 +49,9 @@ const server = http.createServer(async (req, res) => {
   }
   if (req.method === 'GET' && url.pathname === '/health') {
     return sendJson(res, 200, { ok: true, rooms: registry.size() });
+  }
+  if (req.method === 'GET' && url.pathname === '/api/posters') {
+    return handlePosters(res);
   }
   if ((req.method === 'GET' || req.method === 'HEAD') && staticDir &&
       serveStatic(staticDir, req, res, url)) {
@@ -120,4 +125,38 @@ function sendJson(res, statusCode, body) {
     'Access-Control-Allow-Origin': '*', // фронт и расширение могут жить где угодно
   });
   res.end(JSON.stringify(body));
+}
+
+// Витрина «в топе» на стартовом экране. Включается переменной окружения
+// TMDB_TOKEN (бесплатный ключ с themoviedb.org — у Кинопоиска официального
+// публичного API нет). Без токена отдаём пустой список, фронт молчит;
+// ответ кешируется на 12 часов — дёргаем TMDB дважды в сутки.
+let postersCache = { at: 0, items: [] };
+
+async function handlePosters(res) {
+  const token = process.env.TMDB_TOKEN;
+  if (!token) return sendJson(res, 200, { items: [] });
+  if (postersCache.items.length && Date.now() - postersCache.at < POSTERS_CACHE_MS) {
+    return sendJson(res, 200, { items: postersCache.items });
+  }
+  try {
+    const url = new URL('https://api.themoviedb.org/3/trending/movie/week');
+    url.searchParams.set('language', 'ru-RU');
+    url.searchParams.set('api_key', token);
+    const api = await fetch(url, { signal: AbortSignal.timeout(5000) });
+    if (!api.ok) throw new Error(`tmdb ответил ${api.status}`);
+    const data = await api.json();
+    const items = (data.results || [])
+      .filter((movie) => movie.poster_path)
+      .slice(0, POSTERS_COUNT)
+      .map((movie) => ({
+        title: movie.title || movie.original_title || '',
+        poster: `https://image.tmdb.org/t/p/w300${movie.poster_path}`,
+      }));
+    postersCache = { at: Date.now(), items };
+    return sendJson(res, 200, { items });
+  } catch (error) {
+    console.warn('[synodic-serve] постеры TMDB не получены:', error.message);
+    return sendJson(res, 200, { items: postersCache.items }); // отдаём stale-кэш
+  }
 }
