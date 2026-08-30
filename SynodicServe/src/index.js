@@ -10,7 +10,7 @@
  *
  * Протокол (JSON):
  *   клиент → сервер:  { type: 'sync', event: { type, currentTime, rate, ts } }
- *                     { type: 'video', video: { provider, videoId, startAt?, p? } }
+ *                     { type: 'video', video: { provider, videoId, ownerId?, startAt?, p?, hash? } }
  *                     { type: 'ready' } / { type: 'keepalive' }
  *   сервер → клиент:  { type: 'joined', code, peers, state, video }
  *                     { type: 'peer-joined' | 'peer-left', peers }
@@ -21,21 +21,41 @@
 
 import http from 'node:http';
 import { WebSocketServer } from 'ws';
+import { SlidingWindowLimiter } from './rate-limit.js';
 import { RoomRegistry, normalizeVideo } from './rooms.js';
 import { resolveStaticDir, serveStatic } from './static.js';
+import {
+  fetchVkOembed,
+  validateVkIds,
+  VkVideoUnavailableError,
+} from './vk-oembed.js';
 
 const PORT = Number(process.env.PORT || 8787);
 const MAX_PEERS = 2; // MVP: просмотр вдвоём
-const SWEEP_INTERVAL_MS = 60 * 60 * 1000;
+const SWEEP_INTERVAL_MS = 5 * 60 * 1000;
 const VIDEO_HEARTBEAT_MS = 3 * 1000;
 const TRANSPORT_HEARTBEAT_MS = 30 * 1000;
 const BODY_LIMIT = 4 * 1024;
 const POSTERS_CACHE_MS = 12 * 60 * 60 * 1000;
 const POSTERS_COUNT = 4;
+const ROOM_CREATE_WINDOW_MS = 60 * 1000;
+const ROOM_CREATE_LIMIT = 30;
+const VK_OEMBED_CACHE_MS = 12 * 60 * 60 * 1000;
+const VK_OEMBED_WINDOW_MS = 60 * 1000;
+const VK_OEMBED_LIMIT = 60;
+const VK_OEMBED_CACHE_LIMIT = 1000;
 
 process.title = 'synodic-serve'; // чтобы deploy.sh мог делать pkill -x synodic-serve
 
 const registry = new RoomRegistry();
+const roomCreationLimiter = new SlidingWindowLimiter({
+  limit: ROOM_CREATE_LIMIT,
+  windowMs: ROOM_CREATE_WINDOW_MS,
+});
+const vkOembedLimiter = new SlidingWindowLimiter({
+  limit: VK_OEMBED_LIMIT,
+  windowMs: VK_OEMBED_WINDOW_MS,
+});
 const staticDir = resolveStaticDir();
 
 const server = http.createServer(async (req, res) => {
@@ -51,7 +71,21 @@ const server = http.createServer(async (req, res) => {
     const hasVideo = body && Object.hasOwn(body, 'video');
     const video = hasVideo ? normalizeVideo(body.video) : null;
     if (hasVideo && !video) return sendJson(res, 400, { error: 'invalid video' });
-    const room = registry.create(video);
+    const retryAfter = roomCreationLimiter.consume();
+    if (retryAfter > 0) {
+      return sendJson(
+        res,
+        429,
+        { error: 'too many rooms' },
+        { 'Retry-After': String(retryAfter) },
+      );
+    }
+    let room = registry.create(video);
+    if (!room) {
+      registry.sweep();
+      room = registry.create(video);
+    }
+    if (!room) return sendJson(res, 503, { error: 'room capacity reached' });
     return sendJson(res, 201, { code: room.code });
   }
   if (req.method === 'GET' && url.pathname === '/health') {
@@ -59,6 +93,9 @@ const server = http.createServer(async (req, res) => {
   }
   if (req.method === 'GET' && url.pathname === '/api/posters') {
     return handlePosters(res);
+  }
+  if (req.method === 'GET' && url.pathname === '/api/vk-oembed') {
+    return handleVkOembed(res, url);
   }
   if ((req.method === 'GET' || req.method === 'HEAD') && staticDir &&
       serveStatic(staticDir, req, res, url)) {
@@ -131,10 +168,11 @@ function readJsonBody(req) {
   });
 }
 
-function sendJson(res, statusCode, body) {
+function sendJson(res, statusCode, body, extraHeaders = {}) {
   res.writeHead(statusCode, {
     'Content-Type': 'application/json',
     'Access-Control-Allow-Origin': '*', // фронт и расширение могут жить где угодно
+    ...extraHeaders,
   });
   res.end(JSON.stringify(body));
 }
@@ -144,6 +182,52 @@ function sendJson(res, statusCode, body) {
 // публичного API нет). Без токена отдаём пустой список, фронт молчит;
 // ответ кешируется на 12 часов — дёргаем TMDB дважды в сутки.
 let postersCache = { at: 0, items: [] };
+const vkOembedCache = new Map();
+
+async function handleVkOembed(res, url) {
+  const ownerId = url.searchParams.get('ownerId');
+  const videoId = url.searchParams.get('videoId');
+  if (!validateVkIds(ownerId, videoId)) {
+    return sendJson(res, 400, { error: 'invalid VK video id' });
+  }
+
+  const key = `${ownerId}_${videoId}`;
+  const cached = vkOembedCache.get(key);
+  if (cached && Date.now() - cached.at < VK_OEMBED_CACHE_MS) {
+    return sendJson(res, 200, cached.value);
+  }
+
+  const retryAfter = vkOembedLimiter.consume();
+  if (retryAfter > 0) {
+    return sendJson(res, 429, { error: 'too many VK requests' }, {
+      'Retry-After': String(retryAfter),
+    });
+  }
+
+  try {
+    const value = await fetchVkOembed(ownerId, videoId);
+    cacheVkOembed(key, value);
+    return sendJson(res, 200, value);
+  } catch (error) {
+    if (error instanceof VkVideoUnavailableError) {
+      return sendJson(res, 404, { error: 'VK video is unavailable for embedding' });
+    }
+    console.warn('[synodic-serve] VK oEmbed не получен:', error.message);
+    return sendJson(res, 502, { error: 'VK oEmbed is temporarily unavailable' });
+  }
+}
+
+function cacheVkOembed(key, value, now = Date.now()) {
+  if (vkOembedCache.size >= VK_OEMBED_CACHE_LIMIT) {
+    for (const [cachedKey, cached] of vkOembedCache) {
+      if (now - cached.at >= VK_OEMBED_CACHE_MS) vkOembedCache.delete(cachedKey);
+    }
+  }
+  while (vkOembedCache.size >= VK_OEMBED_CACHE_LIMIT) {
+    vkOembedCache.delete(vkOembedCache.keys().next().value);
+  }
+  vkOembedCache.set(key, { at: now, value });
+}
 
 async function handlePosters(res) {
   const token = process.env.TMDB_TOKEN;

@@ -1,12 +1,15 @@
 /**
  * Разбор ссылок на видео: обычных и embed.
  * Возвращает нормализованный источник для комнаты:
- *   { provider: 'youtube' | 'rutube', videoId, startAt?, p? }
+ *   { provider: 'youtube' | 'rutube' | 'vk', videoId, ownerId?, startAt?, p?, hash? }
  */
 
 const SynodicLinks = (() => {
   const YOUTUBE_ID = /^[A-Za-z0-9_-]{11}$/;
   const RUTUBE_ID = /^[0-9a-f]{32}$/i;
+  const VK_OWNER_ID = /^-?\d{1,20}$/;
+  const VK_VIDEO_ID = /^\d{1,20}$/;
+  const VK_HASH = /^[A-Za-z0-9_-]{8,128}$/;
 
   /** `90`, `1m30s`, `58s` → секунды */
   function parseStart(value) {
@@ -63,6 +66,34 @@ const SynodicLinks = (() => {
     };
   }
 
+  function vk(url) {
+    const host = url.hostname.replace(/^www\./, '').replace(/^m\./, '');
+    if (host !== 'vk.com' && host !== 'vk.ru' && host !== 'vkvideo.ru') return null;
+
+    let ownerId = null;
+    let videoId = null;
+    let hash;
+
+    if (url.pathname === '/video_ext.php' || url.pathname === '/video_embed.php') {
+      ownerId = url.searchParams.get('oid');
+      videoId = url.searchParams.get('id');
+      const rawHash = url.searchParams.get('hash');
+      if (rawHash && VK_HASH.test(rawHash)) hash = rawHash;
+    } else {
+      const match = url.pathname.match(/^\/video(-?\d{1,20})_(\d{1,20})(?:\/|$)/);
+      if (match) [, ownerId, videoId] = match;
+    }
+
+    if (!VK_OWNER_ID.test(ownerId || '') || !VK_VIDEO_ID.test(videoId || '')) return null;
+    const source = {
+      provider: SynodicProtocol.PROVIDER_VK,
+      ownerId,
+      videoId,
+    };
+    if (hash) source.hash = hash;
+    return source;
+  }
+
   return {
     /** Строка → источник или null. Принимает мусор спокойно. */
     parse(raw) {
@@ -75,7 +106,7 @@ const SynodicLinks = (() => {
         return null;
       }
       if (url.protocol !== 'http:' && url.protocol !== 'https:') return null;
-      return youtube(url) || rutube(url);
+      return youtube(url) || rutube(url) || vk(url);
     },
 
     /** Разбор с человеческим объяснением, почему ссылка не подошла. */
@@ -91,19 +122,20 @@ const SynodicLinks = (() => {
       if (url.protocol !== 'http:' && url.protocol !== 'https:') {
         return { source: null, message: 'Ссылка должна начинаться с http или https' };
       }
-      const source = youtube(url) || rutube(url);
+      const source = youtube(url) || rutube(url) || vk(url);
       if (source) return { source };
       const host = url.hostname.replace(/^www\./, '').replace(/^m\./, '');
       const known = host === 'youtu.be' ||
         host.endsWith('youtube.com') || host.endsWith('youtube-nocookie.com') ||
-        host.endsWith('rutube.ru');
+        host.endsWith('rutube.ru') ||
+        host === 'vk.com' || host === 'vk.ru' || host === 'vkvideo.ru';
       if (known) {
         return {
           source: null,
           message: 'Не удалось найти видео в этой ссылке — скопируйте её из адресной строки или «поделиться»',
         };
       }
-      return { source: null, message: 'Похоже, этот сервис не даёт встроить видео — поддерживаются YouTube и Rutube' };
+      return { source: null, message: 'Похоже, этот сервис не даёт встроить видео — поддерживаются YouTube, Rutube и VK Видео' };
     },
   };
 })();

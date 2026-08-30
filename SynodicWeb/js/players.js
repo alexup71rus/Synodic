@@ -1,5 +1,5 @@
 /**
- * Адаптеры embed-плееров: YouTube (IFrame API) и Rutube (postMessage API).
+ * Адаптеры embed-плееров: YouTube, Rutube и VK Video.
  *
  * Общий интерфейс адаптера:
  *   mount(host, source) → Promise  — вставить плеер, ждать готовности
@@ -305,10 +305,159 @@ const SynodicPlayers = (() => {
     }
   }
 
+  // ─── VK Video ───────────────────────────────────────────────────────
+
+  let vkApiPromise = null;
+
+  function loadVkApi() {
+    if (vkApiPromise) return vkApiPromise;
+    vkApiPromise = new Promise((resolve, reject) => {
+      if (window.VK?.VideoPlayer) {
+        resolve(window.VK);
+        return;
+      }
+      const script = document.createElement('script');
+      script.src = 'https://vk.com/js/api/videoplayer.js';
+      script.onload = () => {
+        if (window.VK?.VideoPlayer) resolve(window.VK);
+        else reject(new Error('VK-плеер загрузился без API'));
+      };
+      script.onerror = () => reject(new Error('Не удалось загрузить VK-плеер'));
+      document.head.appendChild(script);
+      setTimeout(() => {
+        if (!window.VK?.VideoPlayer) reject(new Error('VK-плеер не ответил'));
+      }, 15000);
+    }).catch((error) => {
+      vkApiPromise = null;
+      throw error;
+    });
+    return vkApiPromise;
+  }
+
+  class VkAdapter {
+    constructor(source) {
+      this.source = source;
+      this.supportsRate = false;
+      this.onLocal = () => {};
+      this.onTime = () => {};
+      this.onError = () => {};
+      this.iframe = null;
+      this.player = null;
+      this.lastState = 'uninited';
+      this.jumps = createTimeJumpDetector();
+      this.destroyed = false;
+      this.readyTimer = null;
+    }
+
+    async mount(host) {
+      const [VK, resolved] = await Promise.all([
+        loadVkApi(),
+        this.source.hash ? Promise.resolve({ hash: this.source.hash }) :
+          SynodicNet.resolveVkVideo(this.source),
+      ]);
+      if (this.destroyed) return;
+
+      const src = new URL('https://vk.com/video_ext.php');
+      src.searchParams.set('oid', this.source.ownerId);
+      src.searchParams.set('id', this.source.videoId);
+      src.searchParams.set('hash', resolved.hash);
+      // Параметр присутствует в официальном oEmbed VK и влияет на доступность
+      // некоторых роликов при встраивании с внешнего сайта.
+      src.searchParams.set('__ref', 'vk.web2');
+      src.searchParams.set('js_api', '1');
+      src.searchParams.set('hd', '4');
+
+      const iframe = document.createElement('iframe');
+      iframe.className = 'player-frame';
+      iframe.title = 'VK Видео';
+      iframe.allow = 'autoplay; encrypted-media; fullscreen; picture-in-picture; screen-wake-lock';
+      iframe.allowFullscreen = true;
+      iframe.src = src.toString();
+      host.appendChild(iframe);
+      this.iframe = iframe;
+      this.player = VK.VideoPlayer(iframe);
+
+      const events = VK.VideoPlayer.Events;
+      await new Promise((resolve, reject) => {
+        this.readyTimer = setTimeout(() => reject(new Error('VK-плеер не ответил')), 20000);
+        this.player.on(events.INITED, () => {
+          clearTimeout(this.readyTimer);
+          resolve();
+        });
+        this.player.on(events.STARTED, () => this.applyState('playing'));
+        this.player.on(events.RESUMED, () => this.applyState('playing'));
+        this.player.on(events.PAUSED, () => this.applyState('paused'));
+        this.player.on(events.ENDED, () => this.applyState('paused'));
+        this.player.on(events.SEEKED, () => this.applySeek());
+        this.player.on(events.TIMEUPDATE, () => this.applyTime());
+        this.player.on(events.ERROR, () => {
+          const message = 'VK не смог проиграть это видео';
+          this.onError(message);
+          reject(new Error(message));
+        });
+      });
+    }
+
+    applyState(state) {
+      if (this.destroyed || this.lastState === state) return;
+      this.lastState = state;
+      this.onLocal({
+        type: state === 'playing' ? SynodicProtocol.EVENT_PLAY : SynodicProtocol.EVENT_PAUSE,
+        time: this.getTime(),
+        rate: 1,
+      });
+    }
+
+    applySeek() {
+      if (this.destroyed) return;
+      const time = this.getTime();
+      this.jumps.sample(time, this.lastState === 'playing', 1);
+      this.onTime(time);
+      this.onLocal({ type: SynodicProtocol.EVENT_SEEK, time, rate: 1 });
+    }
+
+    applyTime() {
+      if (this.destroyed) return;
+      const time = this.getTime();
+      if (!Number.isFinite(time)) return;
+      this.onTime(time);
+      const seeked = this.jumps.sample(time, this.lastState === 'playing', 1);
+      if (seeked !== undefined) {
+        this.onLocal({ type: SynodicProtocol.EVENT_SEEK, time: seeked, rate: 1 });
+      }
+    }
+
+    play() { this.player?.play(); }
+    pause() { this.player?.pause(); }
+    seek(t) { this.player?.seek(t); }
+    setRate() {}
+
+    isPaused() {
+      return this.lastState !== 'playing';
+    }
+
+    getTime() {
+      const time = this.player?.getCurrentTime?.();
+      return Number.isFinite(time) ? time : 0;
+    }
+
+    destroy() {
+      this.destroyed = true;
+      clearTimeout(this.readyTimer);
+      try {
+        this.player?.destroy();
+      } catch {
+        // iframe мог исчезнуть раньше инициализации API
+      }
+      this.iframe?.remove();
+    }
+  }
+
   return {
     create(source) {
       if (source.provider === SynodicProtocol.PROVIDER_YOUTUBE) return new YouTubeAdapter(source);
       if (source.provider === SynodicProtocol.PROVIDER_RUTUBE) return new RutubeAdapter(source);
+      if (source.provider === SynodicProtocol.PROVIDER_VK) return new VkAdapter(source);
       throw new Error(`Неизвестный плеер: ${source.provider}`);
     },
   };

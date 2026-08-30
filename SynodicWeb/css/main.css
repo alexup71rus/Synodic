@@ -39,29 +39,64 @@ body::before {
   content: "";
 }
 
-/* Один мягкий кинотеатральный луч появляется только во время ввода ссылки. */
+/* Кинотеатральный луч сопровождает ввод ссылки и состояние просмотра. */
 body::after {
   position: fixed;
-  top: -18vh;
+  top: -10vh;
+  bottom: -10vh;
   left: 50%;
   z-index: 0;
-  width: min(1040px, 100vw);
-  height: 76vh;
+  width: min(1280px, 118vw);
   background:
-    radial-gradient(ellipse at 50% 100%, rgba(247, 222, 165, 0.11), transparent 58%),
-    linear-gradient(180deg, rgba(247, 222, 165, 0.1), rgba(219, 194, 143, 0.035) 62%, transparent);
-  clip-path: polygon(47% 0, 53% 0, 88% 100%, 12% 100%);
-  filter: blur(18px);
+    radial-gradient(ellipse at 50% 88%, rgba(247, 222, 165, 0.125), transparent 62%),
+    linear-gradient(180deg, rgba(247, 222, 165, 0.115), rgba(219, 194, 143, 0.045) 68%, rgba(219, 194, 143, 0.018));
+  clip-path: polygon(47.5% 0, 52.5% 0, 96% 100%, 4% 100%);
+  filter: blur(19px) brightness(1);
   opacity: 0;
   pointer-events: none;
   content: "";
-  transform: translateX(-50%) scaleX(0.82);
+  transform: translateX(-50%) scaleX(0.9);
   transform-origin: 50% 0;
-  transition: opacity 520ms ease, transform 800ms cubic-bezier(0.22, 1, 0.36, 1);
+  transition:
+    opacity 260ms ease,
+    transform 380ms cubic-bezier(0.22, 1, 0.36, 1),
+    filter 180ms ease;
 }
 body:has(.create-form:focus-within)::after {
-  opacity: 0.82;
+  opacity: 0.9;
   transform: translateX(-50%) scaleX(1);
+  transition-duration: 95ms, 240ms, 95ms;
+}
+body.spotlight-flicker:has(.create-form:focus-within)::after {
+  opacity: 0.2;
+  filter: blur(20px) brightness(0.72);
+  transform: translateX(-50%) scaleX(0.985);
+  transition-duration: 32ms, 48ms, 32ms;
+}
+body.spotlight-flicker-soft:has(.create-form:focus-within)::after {
+  opacity: 0.58;
+  filter: blur(19px) brightness(0.88);
+  transition-duration: 42ms, 70ms, 42ms;
+}
+body.spotlight-room::after {
+  opacity: 0.72;
+  filter: blur(20px) brightness(0.94);
+  transform: translateX(-50%) scaleX(1.015);
+  transition-duration: 1400ms, 1800ms, 1200ms;
+}
+body.spotlight-room.spotlight-anticipating::after {
+  opacity: 0;
+  filter: blur(22px) brightness(0.78);
+  transform: translateX(-50%) scaleX(1.035);
+  transition-duration: 4200ms, 4400ms, 2800ms;
+  transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+}
+body.spotlight-room.spotlight-playing::after {
+  opacity: 0;
+  filter: blur(23px) brightness(0.7);
+  transform: translateX(-50%) scaleX(1.045);
+  transition-duration: 2400ms, 3000ms, 1800ms;
+  transition-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .dust-canvas {

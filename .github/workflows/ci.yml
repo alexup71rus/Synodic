@@ -32,8 +32,25 @@ jobs:
         run: |
           while IFS= read -r source_file; do
             node --check "$source_file"
-          done < <(find SynodicWeb/js SynodicServe/src SynodicServe/scripts \
+          done < <(find SynodicWeb/js SynodicWeb/scripts SynodicServe/src SynodicServe/scripts \
+            SynodicExt/src SynodicExt/scripts \
             -type f \( -name '*.js' -o -name '*.mjs' \) -print)
+
+      - name: Check browser clients
+        shell: bash
+        run: |
+          node SynodicWeb/scripts/net-smoke.mjs
+          node SynodicExt/scripts/smoke.mjs
+          SynodicExt/scripts/package.sh
+          unzip -tq SynodicExt/dist/synodic-ext-*.zip
+
+      - name: Upload extension build
+        uses: actions/upload-artifact@v7
+        with:
+          name: synodic-extension
+          path: SynodicExt/dist/synodic-ext-*.zip
+          if-no-files-found: error
+          retention-days: 30
 
       - name: Audit production dependencies
         run: npm audit --omit=dev --prefix SynodicServe

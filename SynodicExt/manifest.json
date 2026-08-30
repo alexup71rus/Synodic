@@ -1,0 +1,37 @@
+{
+  "manifest_version": 3,
+  "minimum_chrome_version": "116",
+  "name": "Synodic",
+  "version": "0.3.1",
+  "description": "Совместный просмотр видео: синхронизирует play/pause/seek между участниками комнаты.",
+  "icons": {
+    "16": "icons/icon16.png",
+    "32": "icons/icon32.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "permissions": ["storage", "alarms", "scripting"],
+  "host_permissions": ["http://*/*", "https://*/*"],
+  "background": {
+    "service_worker": "src/background/service-worker.js"
+  },
+  "content_scripts": [
+    {
+      "matches": ["http://*/*", "https://*/*"],
+      "js": ["src/shared/protocol.js", "src/content/content.js"],
+      "run_at": "document_idle",
+      "all_frames": true,
+      "match_about_blank": true,
+      "match_origin_as_fallback": true
+    }
+  ],
+  "action": {
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "32": "icons/icon32.png",
+      "48": "icons/icon48.png"
+    },
+    "default_title": "Synodic",
+    "default_popup": "src/popup/popup.html"
+  }
+}

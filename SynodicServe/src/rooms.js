@@ -3,11 +3,18 @@
 import crypto from 'node:crypto';
 
 const IDLE_ROOM_TTL_MS = 12 * 60 * 60 * 1000; // пустые комнаты прибираем через 12 ч
+const UNJOINED_ROOM_TTL_MS = 15 * 60 * 1000; // брошенное создание не держим полдня
+const DEFAULT_MAX_ROOMS = 5000;
 const EVENT_TYPES = new Set(['play', 'pause', 'seek', 'ratechange']);
+const MAX_VIDEO_TIME_S = 7 * 24 * 60 * 60;
+const MAX_PLAYBACK_RATE = 16;
 const VIDEO_ID_PATTERNS = {
   youtube: /^[A-Za-z0-9_-]{11}$/,
   rutube: /^[0-9a-f]{32}$/i,
 };
+const VK_OWNER_ID = /^-?\d{1,20}$/;
+const VK_VIDEO_ID = /^\d{1,20}$/;
+const VK_HASH = /^[A-Za-z0-9_-]{8,128}$/;
 // алфавит без регистра и похожих символов (0/O, 1/I/L): код можно
 // вписывать в любом регистре и диктовать по телефону
 const CODE_ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
@@ -16,6 +23,15 @@ const CODE_ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
 export function normalizeVideo(video) {
   if (!video || typeof video !== 'object') return null;
   const { provider, videoId } = video;
+  if (provider === 'vk') {
+    if (!VK_OWNER_ID.test(video.ownerId) || !VK_VIDEO_ID.test(videoId)) return null;
+    const normalized = { provider, ownerId: video.ownerId, videoId };
+    if (video.hash !== undefined) {
+      if (typeof video.hash !== 'string' || !VK_HASH.test(video.hash)) return null;
+      normalized.hash = video.hash;
+    }
+    return normalized;
+  }
   if (!VIDEO_ID_PATTERNS[provider]?.test(videoId)) return null;
 
   const normalized = { provider, videoId };
@@ -42,6 +58,7 @@ export class Room {
     // последний известный статус просмотра — отдаём опоздавшему при входе
     this.state = { isPlaying: false, currentTime: 0, rate: 1, updatedAt: 0 };
     this.lastSeen = Date.now();
+    this.everJoined = false;
   }
 
   join(ws, maxPeers) {
@@ -50,6 +67,7 @@ export class Room {
       return;
     }
     this.lastSeen = Date.now();
+    this.everJoined = true;
     this.peers.add(ws);
     ws.send(JSON.stringify({
       type: 'joined',
@@ -68,7 +86,7 @@ export class Room {
         return; // мусорные кадры игнорируем
       }
       if (message.type === 'sync' && message.event) {
-        const event = normalizeEvent(message.event);
+        const event = this.normalizeEventForVideo(normalizeEvent(message.event));
         if (!event) return;
         this.applyEvent(event);
         this.broadcast({ type: 'sync', event }, ws); // всем, кроме автора
@@ -93,6 +111,14 @@ export class Room {
       this.lastSeen = Date.now();
       this.broadcast({ type: 'peer-left', peers: this.peers.size });
     });
+  }
+
+  normalizeEventForVideo(event) {
+    if (!event || this.video?.provider !== 'vk') return event;
+    // Официальный VK embed API не умеет менять скорость. Не даём одному
+    // участнику разогнать серверные часы и разъехать позициям всей комнаты.
+    if (event.type === 'ratechange') return null;
+    return { ...event, rate: 1 };
   }
 
   setVideo(video) {
@@ -153,9 +179,10 @@ function randomCode(length) {
 
 function normalizeEvent(event) {
   if (!event || !EVENT_TYPES.has(event.type)) return null;
-  if (!Number.isFinite(event.currentTime) || event.currentTime < 0) return null;
+  if (!Number.isFinite(event.currentTime) || event.currentTime < 0 ||
+      event.currentTime > MAX_VIDEO_TIME_S) return null;
   if (event.rate !== undefined &&
-      (!Number.isFinite(event.rate) || event.rate <= 0)) return null;
+      (!Number.isFinite(event.rate) || event.rate <= 0 || event.rate > MAX_PLAYBACK_RATE)) return null;
 
   const normalized = {
     type: event.type,
@@ -167,12 +194,14 @@ function normalizeEvent(event) {
 }
 
 export class RoomRegistry {
-  constructor() {
+  constructor({ maxRooms = DEFAULT_MAX_ROOMS } = {}) {
     /** @type {Map<string, Room>} */
     this.rooms = new Map();
+    this.maxRooms = maxRooms;
   }
 
   create(video = null) {
+    if (this.rooms.size >= this.maxRooms) return null;
     let code;
     do {
       code = randomCode(4);
@@ -192,7 +221,8 @@ export class RoomRegistry {
 
   sweep(now = Date.now()) {
     for (const [code, room] of this.rooms) {
-      if (room.peers.size === 0 && now - room.lastSeen > IDLE_ROOM_TTL_MS) {
+      const ttl = room.everJoined ? IDLE_ROOM_TTL_MS : UNJOINED_ROOM_TTL_MS;
+      if (room.peers.size === 0 && now - room.lastSeen > ttl) {
         this.rooms.delete(code);
       }
     }

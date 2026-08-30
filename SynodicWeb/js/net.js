@@ -24,6 +24,19 @@ const SynodicNet = (() => {
     return data.code;
   }
 
+  /** Получить публичный embed-hash VK Video без пользовательского токена. */
+  async function resolveVkVideo(source) {
+    const url = new URL('/api/vk-oembed', location.origin);
+    url.searchParams.set('ownerId', source.ownerId);
+    url.searchParams.set('videoId', source.videoId);
+    const res = await fetch(url, { signal: AbortSignal.timeout(CONNECT_TIMEOUT_MS) });
+    if (res.status === 404) throw new Error('VK не разрешает встроить это видео');
+    if (!res.ok) throw new Error('Не удалось получить VK-плеер — попробуйте ещё раз');
+    const data = await res.json();
+    if (!data?.hash) throw new Error('VK вернул плеер без доступа к видео');
+    return data;
+  }
+
   class RoomConnection {
     /** @param {string} code */
     constructor(code) {
@@ -100,9 +113,10 @@ const SynodicNet = (() => {
         return;
       }
       this.ws = socket;
+      let joinedThisAttempt = false;
 
       const failTimer = setTimeout(() => {
-        if (this.ws === socket && !this.joinedOnce) {
+        if (this.ws === socket && !joinedThisAttempt) {
           try {
             socket.close(4001, 'join timeout');
           } catch {
@@ -131,6 +145,10 @@ const SynodicNet = (() => {
           message = JSON.parse(event.data);
         } catch {
           return;
+        }
+        if (message.type === SynodicProtocol.SERVER_JOINED) {
+          joinedThisAttempt = true;
+          clearTimeout(failTimer);
         }
         this._handle(message);
       };
@@ -207,5 +225,5 @@ const SynodicNet = (() => {
     }
   }
 
-  return { createRoom, RoomConnection };
+  return { createRoom, resolveVkVideo, RoomConnection };
 })();

@@ -105,6 +105,18 @@
     elements.leave.addEventListener('click', leaveRoom);
     elements.copy.addEventListener('click', copyInvite);
     elements.arm.addEventListener('click', armViewing);
+    elements.arm.addEventListener('mouseenter', () => {
+      SynodicSpotlight?.anticipateViewing(true);
+    });
+    elements.arm.addEventListener('mouseleave', () => {
+      SynodicSpotlight?.anticipateViewing(false);
+    });
+    elements.arm.addEventListener('focus', () => {
+      SynodicSpotlight?.anticipateViewing(true);
+    });
+    elements.arm.addEventListener('blur', () => {
+      SynodicSpotlight?.anticipateViewing(false);
+    });
     elements.videoUrl.addEventListener('input', clearFeedback);
 
     elements.changeVideoToggle.addEventListener('click', () => {
@@ -183,8 +195,9 @@
     connection = new SynodicNet.RoomConnection(code);
     engine = new SynodicSync.SyncEngine(connection);
     engine.onPendingPlay = showPendingPlay;
+    engine.onLocalApplied = updateTheaterLight;
 
-    let mountedForVideo = null; // source, по которому смонтирован плеер
+    let mountedForVideoKey = null;
 
     connection.on('status', ({ connected, reconnecting }) => {
       if (connected) {
@@ -215,11 +228,13 @@
         showPlayerPlaceholder('Напарник ещё не выбрал видео — оно появится здесь само.');
         return;
       }
-      if (mountedForVideo?.videoId !== source.videoId) {
-        mountedForVideo = source;
+      const key = sourceKey(source);
+      if (mountedForVideoKey !== key) {
+        mountedForVideoKey = key;
         await mountPlayer(source);
       }
       engine.applySnapshot(message.state);
+      SynodicSpotlight?.setPlaying(armed && !!message.state?.isPlaying);
     });
 
     connection.on('peer', ({ online }) => {
@@ -238,11 +253,14 @@
       else showFeedback('Второй готов — нажмите «Смотреть вместе»', 'success');
     });
 
-    connection.on('event', (event) => engine.handleRemote(event));
+    connection.on('event', (event) => {
+      engine.handleRemote(event);
+      updateTheaterLight(event);
+    });
 
     connection.on('video', (video) => {
       if (!video?.videoId) return;
-      mountedForVideo = video;
+      mountedForVideoKey = sourceKey(video);
       applyVideoChange(video, { local: false });
     });
 
@@ -274,6 +292,7 @@
     engine.expected = { playing: false, time: 0, rate: 1, at: performance.now() };
     engine.lastRate = 1;
     engine.pendingPlay = false;
+    SynodicSpotlight?.setPlaying(false);
     mountPlayer(source);
     if (!local) showFeedback('Напарник сменил видео — включаем новое', 'success');
   }
@@ -281,6 +300,7 @@
   function armViewing() {
     armed = true;
     elements.armOverlay.hidden = true;
+    SynodicSpotlight?.commitViewing();
     connection?.sendReady();
     engine?.arm();
     maybeStartTogether();
@@ -406,9 +426,11 @@
   function showRoomView() {
     elements.startView.hidden = true;
     elements.roomView.hidden = false;
+    SynodicSpotlight?.enterRoom();
   }
 
   function showStartView() {
+    SynodicSpotlight?.leaveRoom();
     elements.roomView.hidden = true;
     elements.startView.hidden = false;
     elements.connection.hidden = true;
@@ -438,8 +460,23 @@
     elements.peerPill.setAttribute('aria-label', PEER_TITLES[state]);
   }
 
+  function updateTheaterLight(event) {
+    if (event?.type === SynodicProtocol.EVENT_PAUSE) {
+      SynodicSpotlight?.setPlaying(false);
+    } else if (event?.type === SynodicProtocol.EVENT_PLAY && armed) {
+      SynodicSpotlight?.setPlaying(true);
+    }
+  }
+
   function normalizedCode() {
     return elements.code.value.trim().toUpperCase();
+  }
+
+  function sourceKey(source) {
+    if (!source) return null;
+    return source.provider === SynodicProtocol.PROVIDER_VK
+      ? `${source.provider}:${source.ownerId}:${source.videoId}`
+      : `${source.provider}:${source.videoId}:${source.p || ''}`;
   }
 
   async function copyInvite() {

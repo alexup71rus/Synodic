@@ -3,8 +3,29 @@
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover, interactive-widget=resizes-content" />
-    <title>Synodic</title>
-    <meta name="description" content="Совместный просмотр видео: вставьте ссылку, создайте комнату и смотрите синхронно." />
+    <title>Synodic — совместный просмотр видео вдвоём</title>
+    <meta name="description" content="Смотрите YouTube, Rutube и VK Видео вдвоём: общий старт, пауза и перемотка. Synodic синхронизирует плееры, не передавая само видео." />
+    <meta name="theme-color" content="#15151b" />
+    <link rel="canonical" href="https://synodic.khodyr.netcraze.pro/" />
+
+    <meta property="og:type" content="website" />
+    <meta property="og:locale" content="ru_RU" />
+    <meta property="og:site_name" content="Synodic" />
+    <meta property="og:title" content="Synodic — совместный просмотр видео вдвоём" />
+    <meta property="og:description" content="Общий старт, пауза и перемотка для YouTube, Rutube и VK Видео. Само видео остаётся у источника." />
+    <meta property="og:url" content="https://synodic.khodyr.netcraze.pro/" />
+    <meta property="og:image" content="https://synodic.khodyr.netcraze.pro/icons/og-cover.jpg" />
+    <meta property="og:image:secure_url" content="https://synodic.khodyr.netcraze.pro/icons/og-cover.jpg" />
+    <meta property="og:image:type" content="image/jpeg" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:image:alt" content="Synodic — видео на двоих, синхронно" />
+
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content="Synodic — совместный просмотр видео вдвоём" />
+    <meta name="twitter:description" content="Общий старт, пауза и перемотка для YouTube, Rutube и VK Видео." />
+    <meta name="twitter:image" content="https://synodic.khodyr.netcraze.pro/icons/og-cover.jpg" />
+    <meta name="twitter:image:alt" content="Synodic — видео на двоих, синхронно" />
     <link rel="icon" href="icons/icon.svg" type="image/svg+xml" />
     <link rel="apple-touch-icon" href="icons/icon128.png" />
     <link rel="stylesheet" href="css/main.css" />
@@ -47,7 +68,7 @@
                 inputmode="url"
                 autocomplete="off"
                 spellcheck="false"
-                placeholder="Ссылка на YouTube или Rutube"
+                placeholder="Ссылка на YouTube, Rutube или VK Видео"
                 aria-describedby="start-feedback"
               />
               <button id="create" class="button button-primary create-submit" type="submit">Создать</button>
@@ -149,13 +170,14 @@
         <li>Вставьте ссылку на видео и создайте комнату.</li>
         <li>Отправьте напарнику код или ссылку-приглашение.</li>
         <li>Когда оба нажмут «Смотреть вместе», видео запустится одновременно.
-            Дальше пауза, перемотка и скорость — общие.</li>
+            Дальше пауза и перемотка — общие.</li>
       </ol>
       <h4>Поддерживаются</h4>
-      <p>YouTube и Rutube: обычные ссылки, ссылки «поделиться» и embed.</p>
+      <p>YouTube, Rutube и публичные VK Видео: обычные ссылки, ссылки «поделиться» и embed.</p>
       <h4>Полезно знать</h4>
       <ul class="info-notes">
-        <li>видео каждый грузит напрямую с YouTube или Rutube — синхронизируется только состояние плеера;</li>
+        <li>видео каждый грузит напрямую с видеосервиса — Synodic передаёт только состояние плеера;</li>
+        <li>скорость общая в YouTube и Rutube; VK не даёт управлять ею через официальный плеер;</li>
         <li>реклама не синхронизируется: если у одного стоит блокировщик, просмотр разойдётся — вернёт пауза на место;</li>
         <li>полноэкранный режим у каждого свой;</li>
         <li>в комнате двое, код можно вводить в любом регистре.</li>
@@ -175,6 +197,7 @@
     <script src="js/players.js"></script>
     <script src="js/sync.js"></script>
     <script src="js/dust.js"></script>
+    <script src="js/spotlight.js"></script>
     <script src="js/peer-pill.js"></script>
     <script src="js/app.js"></script>
   </body>

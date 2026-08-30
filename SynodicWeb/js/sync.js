@@ -47,6 +47,10 @@ const SynodicSync = (() => {
 
     setAdapter(adapter) {
       this.adapter = adapter;
+      if (adapter.supportsRate === false) {
+        this.lastRate = 1;
+        this.expected.rate = 1;
+      }
       adapter.onLocal = (event) => this.handleLocal(event);
       adapter.onTime = (t) => {
         this.localSample = { time: t, at: performance.now() };
@@ -73,7 +77,9 @@ const SynodicSync = (() => {
       if (!this.adapter) return;
       const { playing, time, rate } = this.expectedNow();
 
-      if (Math.abs(this.lastRate - rate) > 0.001) this.commandRate(rate);
+      if (this.supportsRate() && Math.abs(this.lastRate - rate) > 0.001) {
+        this.commandRate(rate);
+      }
       if (Math.abs(this.adapter.getTime() - time) > SEEK_EPSILON_S) this.commandSeek(time, time);
       if (playing && this.adapter.isPaused()) {
         this.commandPlay();
@@ -89,7 +95,7 @@ const SynodicSync = (() => {
       this.expected = {
         playing: !!state.isPlaying,
         time: Number(state.currentTime) || 0,
-        rate: Number(state.rate) || 1,
+        rate: this.supportsRate() ? Number(state.rate) || 1 : 1,
         at: performance.now(),
       };
       this.lastRate = this.expected.rate;
@@ -99,6 +105,7 @@ const SynodicSync = (() => {
 
     handleLocal(event) {
       if (this.consumeEcho(event.type, event)) return;
+      if (!this.supportsRate() && event.type === SynodicProtocol.EVENT_RATE) return;
       this.lastUserActionAt = Date.now();
 
       // обновляем ожидаемое состояние собственным событием
@@ -107,25 +114,26 @@ const SynodicSync = (() => {
       this.expected = {
         playing,
         time: Number.isFinite(event.time) ? event.time : this.expected.time,
-        rate: event.rate || this.lastRate,
+        rate: this.supportsRate() ? event.rate || this.lastRate : 1,
         at: performance.now(),
       };
-      if (event.rate) this.lastRate = event.rate;
+      if (this.supportsRate() && event.rate) this.lastRate = event.rate;
 
       this.connection.sendEvent({
         type: event.type,
         currentTime: this.expected.time,
-        rate: this.lastRate,
+        rate: this.supportsRate() ? this.lastRate : 1,
         ts: Date.now(),
       });
       this.pendingPlay = false;
+      this.onLocalApplied(event);
     }
 
     /** Событие от напарника (или heartbeat сервера). */
     handleRemote(event) {
       if (!event || !this.adapter) return;
 
-      if (Number.isFinite(event.rate) && event.rate > 0 &&
+      if (this.supportsRate() && Number.isFinite(event.rate) && event.rate > 0 &&
           Math.abs(this.lastRate - event.rate) > 0.001) {
         this.lastRate = event.rate;
         this.commandRate(event.rate);
@@ -172,7 +180,9 @@ const SynodicSync = (() => {
       this.expected = {
         playing,
         time: Number.isFinite(event.currentTime) ? event.currentTime : this.expected.time,
-        rate: Number.isFinite(event.rate) ? event.rate : this.expected.rate,
+        rate: this.supportsRate()
+          ? (Number.isFinite(event.rate) ? event.rate : this.expected.rate)
+          : 1,
         at: performance.now(),
       };
     }
@@ -235,10 +245,15 @@ const SynodicSync = (() => {
     }
 
     commandRate(rate) {
+      if (!this.supportsRate()) return;
       this.expectEcho(SynodicProtocol.EVENT_RATE, (event) =>
         Math.abs(event.rate - rate) <= 0.001);
       this.adapter.setRate(rate);
       this.lastRate = rate;
+    }
+
+    supportsRate() {
+      return this.adapter?.supportsRate !== false;
     }
 
     // ─── эхо-защита (окно после применённой команды) ─────────────────

@@ -5,6 +5,9 @@
  * Запуск при поднятом сервере: node scripts/smoke.mjs [baseUrl]
  */
 import { WebSocket } from 'ws';
+import { SlidingWindowLimiter } from '../src/rate-limit.js';
+import { RoomRegistry } from '../src/rooms.js';
+import { parseVkOembedHtml } from '../src/vk-oembed.js';
 
 const base = process.argv[2] || 'http://localhost:8787';
 const wsBase = base.replace(/^http/, 'ws');
@@ -16,6 +19,33 @@ const fail = (message) => {
 };
 
 try {
+  const boundedRegistry = new RoomRegistry({ maxRooms: 1 });
+  const abandonedRoom = boundedRegistry.create();
+  assert(abandonedRoom, 'ограниченный реестр не создал первую комнату');
+  assert(boundedRegistry.create() === null, 'реестр превысил maxRooms');
+  boundedRegistry.sweep(abandonedRoom.lastSeen + 15 * 60 * 1000 + 1);
+  assert(boundedRegistry.size() === 0, 'непосещённая комната не истекла через 15 минут');
+
+  const limiter = new SlidingWindowLimiter({ limit: 2, windowMs: 1000 });
+  assert(limiter.consume(1000) === 0 && limiter.consume(1100) === 0, 'лимитер рано отказал');
+  assert(limiter.consume(1200) === 1, 'лимитер пропустил запрос сверх окна');
+  assert(limiter.consume(2000) === 0, 'лимитер не освободил окно');
+
+  const parsedVkEmbed = parseVkOembedHtml(
+    '<iframe src="https://vk.com/video_ext.php?oid=-31038184&amp;id=456244573&amp;hash=3d1ea1738f548565"></iframe>',
+    '-31038184',
+    '456244573',
+  );
+  assert(parsedVkEmbed?.hash === '3d1ea1738f548565', 'oEmbed VK не разобран');
+  assert(
+    parseVkOembedHtml(
+      '<iframe src="https://evil.example/video_ext.php?oid=-31038184&id=456244573&hash=3d1ea1738f548565"></iframe>',
+      '-31038184',
+      '456244573',
+    ) === null,
+    'oEmbed VK принял посторонний iframe',
+  );
+
   const res = await fetch(`${base}/api/rooms`, { method: 'POST' });
   assert(res.status === 201, `POST /api/rooms → ${res.status}`);
   const { code } = await res.json();
@@ -46,6 +76,16 @@ try {
     event: { type: 'play', currentTime: 12.5, rate: 1.25, ts: Date.now() },
   });
   await playB;
+
+  const ignoredExtremeRate = b.expectNoMessage(
+    (message) => message.type === 'sync' && message.event?.currentTime === 13,
+    'событие с недопустимой скоростью',
+  );
+  a.send({
+    type: 'sync',
+    event: { type: 'ratechange', currentTime: 13, rate: 1000, ts: Date.now() },
+  });
+  await ignoredExtremeRate;
 
   const heartbeatB = b.waitFor(
     (message) => message.type === 'sync' && message.event?.type === 'heartbeat',
@@ -140,6 +180,36 @@ try {
   });
   await playAfterVideo;
 
+  const vkOnGuest = guest.waitFor((message) => message.type === 'video', 'VK video для guest');
+  host.send({
+    type: 'video',
+    video: { provider: 'vk', ownerId: '-31038184', videoId: '456244573' },
+  });
+  const vkVideoMessage = await vkOnGuest;
+  assert(vkVideoMessage.video?.provider === 'vk', 'VK-видео не дошло до напарника');
+  assert(vkVideoMessage.video?.ownerId === '-31038184', 'VK-видео потеряло ownerId');
+
+  const vkPlay = guest.waitFor(
+    (message) => message.type === 'sync' && message.event?.type === 'play',
+    'VK play для guest',
+  );
+  host.send({
+    type: 'sync',
+    event: { type: 'play', currentTime: 8, rate: 1.5, ts: Date.now() },
+  });
+  const vkPlayMessage = await vkPlay;
+  assert(vkPlayMessage.event.rate === 1, 'VK play изменил серверную скорость');
+
+  const ignoredVkRate = guest.expectNoMessage(
+    (message) => message.type === 'sync' && message.event?.type === 'ratechange',
+    'VK ratechange',
+  );
+  host.send({
+    type: 'sync',
+    event: { type: 'ratechange', currentTime: 9, rate: 1.5, ts: Date.now() },
+  });
+  await ignoredVkRate;
+
   const readyOnGuest = guest.waitFor((message) => message.type === 'peer-ready', 'peer-ready');
   host.send({ type: 'ready' });
   await readyOnGuest;
@@ -148,8 +218,14 @@ try {
   const index = await fetch(`${base}/`);
   const indexHtml = await index.text();
   assert(index.status === 200 && indexHtml.includes('Synodic'), 'index.html не отдаётся');
+  assert(indexHtml.includes('property="og:image"') && indexHtml.includes('/icons/og-cover.jpg'),
+    'Open Graph-обложка не указана в index.html');
   const css = await fetch(`${base}/css/main.css`);
   assert(css.status === 200, 'css не отдаётся');
+  const ogCover = await fetch(`${base}/icons/og-cover.jpg`);
+  assert(ogCover.status === 200, 'Open Graph-обложка не отдаётся');
+  assert(ogCover.headers.get('content-type') === 'image/jpeg',
+    `Open Graph-обложка имеет Content-Type ${ogCover.headers.get('content-type')}`);
 
   const invalidVideo = await fetch(`${base}/api/rooms`, {
     method: 'POST',
@@ -157,6 +233,16 @@ try {
     body: JSON.stringify({ video: { provider: 'youtube', videoId: 'bad' } }),
   });
   assert(invalidVideo.status === 400, `невалидное видео → ${invalidVideo.status}, ожидалось 400`);
+
+  const invalidVk = await fetch(`${base}/api/rooms`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ video: { provider: 'vk', ownerId: 'oops', videoId: '456244573' } }),
+  });
+  assert(invalidVk.status === 400, `невалидное VK-видео → ${invalidVk.status}, ожидалось 400`);
+
+  const invalidVkOembed = await fetch(`${base}/api/vk-oembed?ownerId=oops&videoId=456244573`);
+  assert(invalidVkOembed.status === 400, `невалидный VK oEmbed → ${invalidVkOembed.status}`);
 
   console.log(`✓ комната ${code}: sync, reconnect, видео, ready, статика проверены`);
 } catch (error) {
@@ -231,6 +317,29 @@ function createPeer(url) {
           }, timeoutMs),
         };
         closeWaiters.push(waiter);
+      });
+    },
+    expectNoMessage(predicate, label, timeoutMs = 180) {
+      const queuedIndex = messages.findIndex(predicate);
+      if (queuedIndex !== -1) {
+        messages.splice(queuedIndex, 1);
+        return Promise.reject(new Error(`${label} не было отклонено`));
+      }
+      if (closed) return Promise.reject(new Error(`соединение закрыто при проверке: ${label}`));
+
+      return new Promise((resolve, reject) => {
+        const waiter = { predicate, label, resolve: null, reject: null, timer: null };
+        waiter.resolve = () => {
+          clearTimeout(waiter.timer);
+          reject(new Error(`${label} не было отклонено`));
+        };
+        waiter.reject = reject;
+        waiter.timer = setTimeout(() => {
+          const index = waiters.indexOf(waiter);
+          if (index !== -1) waiters.splice(index, 1);
+          resolve();
+        }, timeoutMs);
+        waiters.push(waiter);
       });
     },
     close() {

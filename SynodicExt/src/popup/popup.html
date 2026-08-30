@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Synodic</title>
+    <link rel="stylesheet" href="popup.css" />
+  </head>
+  <body>
+    <main class="shell">
+      <header class="topbar">
+        <div class="brand">
+          <img src="../../icons/icon48.png" width="32" height="32" alt="" />
+          <h1>Synodic</h1>
+        </div>
+        <div id="connection" class="connection" data-tone="idle">
+          <span id="connection-label">Готов</span>
+        </div>
+      </header>
+
+      <section id="start-view" class="view start-view">
+        <div class="action-panel">
+          <button id="create" class="button button-primary button-wide" type="button">
+            Создать комнату
+          </button>
+
+          <div class="divider"><span>или войдите по коду</span></div>
+
+          <form id="join-form" class="join-form">
+            <label class="sr-only" for="code">Код комнаты</label>
+            <input
+              id="code"
+              class="code-input"
+              inputmode="text"
+              maxlength="4"
+              autocomplete="off"
+              spellcheck="false"
+              placeholder="Код"
+              aria-describedby="feedback"
+            />
+            <button id="join" class="button button-secondary" type="submit">Войти</button>
+          </form>
+        </div>
+
+        <p class="scope-note">Откройте страницу с видео — комната привяжется только к этой вкладке.</p>
+      </section>
+
+      <section id="room-view" class="view room-view" hidden>
+        <div class="room-summary">
+          <p id="room-eyebrow" class="eyebrow">Ваша комната</p>
+          <h2 id="room-title">Осталось дождаться второго</h2>
+          <p id="room-description" class="room-description" hidden></p>
+        </div>
+
+        <button id="copy" class="room-code" type="button" aria-label="Скопировать код комнаты">
+          <span class="room-code-text">
+            <span class="code-caption">Код комнаты</span>
+            <span id="room-code">····</span>
+          </span>
+          <span class="copy-label">
+            <svg viewBox="0 0 24 24" aria-hidden="true">
+              <rect x="8" y="8" width="11" height="11" rx="2" />
+              <path d="M16 8V6a2 2 0 0 0-2-2H6a2 2 0 0 0-2 2v8a2 2 0 0 0 2 2h2" />
+            </svg>
+            Скопировать
+          </span>
+        </button>
+
+        <button id="select-tab" class="button button-secondary button-wide room-action" type="button" hidden>
+          Выбрать эту вкладку
+        </button>
+
+        <button id="ready" class="button button-primary button-wide room-action" type="button" hidden>
+          Смотреть вместе
+        </button>
+
+        <button id="leave" class="button button-quiet button-wide" type="button">Покинуть комнату</button>
+      </section>
+
+      <p id="feedback" class="feedback" role="status" aria-live="polite" hidden></p>
+    </main>
+
+    <script src="../shared/config.js"></script>
+    <script src="../shared/protocol.js"></script>
+    <script src="popup.js"></script>
+  </body>
+</html>
