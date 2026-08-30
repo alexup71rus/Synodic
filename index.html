@@ -1,0 +1,152 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Synodic — кино на двоих</title>
+    <meta name="description" content="Совместный просмотр видео: вставьте ссылку, создайте комнату и смотрите синхронно." />
+    <link rel="icon" href="icons/icon.svg" type="image/svg+xml" />
+    <link rel="apple-touch-icon" href="icons/icon128.png" />
+    <link rel="stylesheet" href="css/main.css" />
+  </head>
+  <body>
+    <div class="stars" aria-hidden="true"></div>
+
+    <div class="page">
+      <header class="topbar">
+        <div class="brand">
+          <svg class="brand-mark" viewBox="0 0 128 128" width="40" height="40" aria-hidden="true">
+            <rect x="4" y="4" width="120" height="120" rx="30" fill="#1a1a20" />
+            <circle cx="58" cy="64" r="37" fill="#f2c75c" />
+            <circle cx="75" cy="48" r="35" fill="#1a1a20" />
+            <circle cx="96" cy="35" r="4" fill="#f7df9b" />
+            <circle cx="102" cy="55" r="2.5" fill="#c7bfae" />
+          </svg>
+          <div>
+            <h1>Synodic</h1>
+            <p>кино на двоих</p>
+          </div>
+        </div>
+        <div id="connection" class="connection" data-tone="idle">
+          <span class="connection-dot" aria-hidden="true"></span>
+          <span id="connection-label">Готов</span>
+        </div>
+      </header>
+
+      <main>
+        <!-- ─── Стартовый экран ─────────────────────────────────────────── -->
+        <section id="start-view" class="view">
+          <div class="hero">
+            <div class="night-window" aria-hidden="true">
+              <span class="window-moon"></span>
+              <span class="window-star star-one"></span>
+              <span class="window-star star-two"></span>
+              <span class="window-sill"></span>
+            </div>
+            <h2>Как будто вы рядом</h2>
+            <p>
+              Вставьте ссылку на видео, создайте комнату и отправьте код второму.
+              Пауза, перемотка и продолжение будут общими.
+            </p>
+          </div>
+
+          <form id="create-form" class="create-form">
+            <label class="sr-only" for="video-url">Ссылка на видео</label>
+            <input
+              id="video-url"
+              class="url-input"
+              type="url"
+              inputmode="url"
+              autocomplete="off"
+              spellcheck="false"
+              placeholder="https://www.youtube.com/watch?v=… или https://rutube.ru/video/…"
+              aria-describedby="feedback"
+            />
+            <button id="create" class="button button-primary" type="submit">Создать комнату</button>
+          </form>
+          <p class="hint">Поддерживаются YouTube и Rutube — обычная ссылка или embed.</p>
+
+          <div class="divider"><span>или войдите по коду</span></div>
+
+          <form id="join-form" class="join-form">
+            <label class="sr-only" for="code">Код комнаты</label>
+            <input
+              id="code"
+              class="code-input"
+              inputmode="text"
+              maxlength="4"
+              autocomplete="off"
+              spellcheck="false"
+              placeholder="КОД"
+              aria-describedby="feedback"
+            />
+            <button id="join" class="button button-secondary" type="submit">Войти</button>
+          </form>
+        </section>
+
+        <!-- ─── Комната ─────────────────────────────────────────────────── -->
+        <section id="room-view" class="view room-view" hidden>
+          <div class="room-head">
+            <div class="room-heading">
+              <p id="room-eyebrow" class="eyebrow">Ваша комната</p>
+              <h2 id="room-title">Осталось дождаться второго</h2>
+            </div>
+            <button id="leave" class="button button-quiet" type="button">Покинуть</button>
+          </div>
+
+          <div class="room-meta">
+            <button id="copy" class="room-code" type="button" aria-label="Скопировать ссылку-приглашение">
+              <span id="room-code">····</span>
+              <span class="copy-label"><span aria-hidden="true">⧉</span> Скопировать ссылку-приглашение</span>
+            </button>
+            <div id="peer-state" class="peer-state">
+              <span class="pulse" aria-hidden="true"></span>
+              <span id="peer-label">Ждём второго участника</span>
+            </div>
+          </div>
+
+          <div class="stage">
+            <div id="player-host" class="player-host"></div>
+            <div id="arm-overlay" class="arm-overlay" hidden>
+              <div class="arm-panel">
+                <div class="arm-moon" aria-hidden="true"></div>
+                <h3 id="arm-title">Комната готова</h3>
+                <p id="arm-text">Нажмите кнопку — и дальше всё будет синхронно.</p>
+                <button id="arm" class="button button-primary" type="button">Смотреть вместе</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="room-actions">
+            <button id="change-video-toggle" class="button button-quiet" type="button">Сменить видео</button>
+            <form id="change-video-form" class="change-video-form" hidden>
+              <label class="sr-only" for="new-video-url">Новая ссылка на видео</label>
+              <input
+                id="new-video-url"
+                type="url"
+                inputmode="url"
+                autocomplete="off"
+                spellcheck="false"
+                placeholder="Новая ссылка YouTube или Rutube"
+              />
+              <button class="button button-secondary" type="submit">Включить</button>
+            </form>
+          </div>
+        </section>
+
+        <p id="feedback" class="feedback" role="status" aria-live="polite" hidden></p>
+      </main>
+
+      <footer class="foot">
+        <p>Synodic синхронизирует только состояние плеера — видео каждый смотрит напрямую с YouTube или Rutube.</p>
+      </footer>
+    </div>
+
+    <script src="js/protocol.js"></script>
+    <script src="js/links.js"></script>
+    <script src="js/net.js"></script>
+    <script src="js/players.js"></script>
+    <script src="js/sync.js"></script>
+    <script src="js/app.js"></script>
+  </body>
+</html>
