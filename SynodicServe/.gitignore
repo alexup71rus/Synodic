@@ -1,0 +1,7 @@
+node_modules/
+logs/
+.env
+*.log
+.DS_Store
+# фронтенд попадает сюда только при деплое (rsync из ../SynodicWeb)
+public/

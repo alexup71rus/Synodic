@@ -1,0 +1,36 @@
+{
+	# без лишних заголовков сервера
+	# Keenetic проксирует к бэкенду без SNI — подсказываем имя по умолчанию
+	default_sni synodic.khodyr.netcraze.pro
+}
+
+# Публичный TLS терминирует Keenetic («публикация веб-приложения»):
+# снаружи домен прикрыт его wildcard-сертификатом *.khodyr.netcraze.pro,
+# а до Caddy трафик доходит по HTTPS изнутри сети. ACME-челленджи снаружи
+# не проходят (их встречает роутер), своего сертификата Caddy не получит —
+# поэтому отдаём внутренний (tls internal), handshake всегда работает.
+# Keenetic шлёт запрос без SNI и подменяет Host на IP сервера, поэтому
+# блок отвечает и на домен, и на 192.168.1.99.
+synodic.khodyr.netcraze.pro, 192.168.1.99 {
+	tls internal
+
+	# видно, какие запросы реально дошли (диагностика цепочки через Keenetic)
+	log {
+		output stdout
+		format console
+	}
+
+	encode zstd gzip
+
+	reverse_proxy app:8787
+
+	header {
+		Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		Content-Security-Policy "default-src 'self'; script-src 'self' https://www.youtube.com https://s.ytimg.com; style-src 'self' 'unsafe-inline'; img-src 'self' data: https://image.tmdb.org; frame-src https://www.youtube.com https://www.youtube-nocookie.com https://rutube.ru; connect-src 'self' wss://synodic.khodyr.netcraze.pro; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'"
+		Permissions-Policy "camera=(), microphone=(), geolocation=()"
+		X-Frame-Options DENY
+		X-Content-Type-Options nosniff
+		Referrer-Policy strict-origin-when-cross-origin
+		-Server
+	}
+}
