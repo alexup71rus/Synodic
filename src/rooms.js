@@ -1,15 +1,30 @@
-/** Комнаты: участники, снапшот состояния просмотра и рассылка. */
+/** Комнаты: участники, видео, снапшот состояния просмотра и рассылка. */
 
 import crypto from 'node:crypto';
 
 const IDLE_ROOM_TTL_MS = 12 * 60 * 60 * 1000; // пустые комнаты прибираем через 12 ч
 const EVENT_TYPES = new Set(['play', 'pause', 'seek', 'ratechange']);
+const PROVIDERS = new Set(['youtube', 'rutube']);
+// алфавит без регистра и похожих символов (0/O, 1/I/L): код можно
+// вписывать в любом регистре и диктовать по телефону
+const CODE_ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
+
+/** Нормализовать источник видео или null. */
+export function normalizeVideo(video) {
+  if (!video || typeof video !== 'object') return null;
+  const { provider, videoId } = video;
+  if (!PROVIDERS.has(provider)) return null;
+  if (typeof videoId !== 'string' || !/^[A-Za-z0-9_-]{5,64}$/.test(videoId)) return null;
+  return { provider, videoId };
+}
 
 export class Room {
-  constructor(code) {
+  constructor(code, video = null) {
     this.code = code;
     /** @type {Set<import('ws').WebSocket>} */
     this.peers = new Set();
+    // что смотрим — отдаём опоздавшему при входе
+    this.video = normalizeVideo(video);
     // последний известный статус просмотра — отдаём опоздавшему при входе
     this.state = { isPlaying: false, currentTime: 0, rate: 1, updatedAt: 0 };
     this.lastSeen = Date.now();
@@ -27,6 +42,7 @@ export class Room {
       code: this.code,
       peers: this.peers.size,
       state: this.snapshot(),
+      video: this.video,
     }));
     this.broadcast({ type: 'peer-joined', peers: this.peers.size }, ws);
 
@@ -42,7 +58,20 @@ export class Room {
         if (!event) return;
         this.applyEvent(event);
         this.broadcast({ type: 'sync', event }, ws); // всем, кроме автора
+        return;
       }
+      if (message.type === 'video') {
+        const video = normalizeVideo(message.video);
+        if (!video) return;
+        this.setVideo(video);
+        this.broadcast({ type: 'video', video }, ws);
+        return;
+      }
+      if (message.type === 'ready') {
+        // жест пользователя: даём напарнику понять, что можно начинать
+        this.broadcast({ type: 'peer-ready' }, ws);
+      }
+      // keepalive и прочее — просто держим соединение живым
     });
 
     ws.on('close', () => {
@@ -50,6 +79,13 @@ export class Room {
       this.lastSeen = Date.now();
       this.broadcast({ type: 'peer-left', peers: this.peers.size });
     });
+  }
+
+  setVideo(video) {
+    this.video = video;
+    // новое видео — просмотр начинается заново, старая позиция не имеет смысла
+    this.state = { isPlaying: false, currentTime: 0, rate: 1, updatedAt: Date.now() };
+    this.lastSeen = this.state.updatedAt;
   }
 
   applyEvent(event) {
@@ -92,8 +128,16 @@ export class Room {
   }
 }
 
-function normalizeEvent(event) {
-  if (!event || !EVENT_TYPES.has(event.type)) return null;
+function randomCode(length) {
+  const bytes = crypto.randomBytes(length);
+  let code = '';
+  for (let i = 0; i < length; i += 1) {
+    code += CODE_ALPHABET[bytes[i] % CODE_ALPHABET.length];
+  }
+  return code;
+}
+
+function normalizeEvent(event) {  if (!event || !EVENT_TYPES.has(event.type)) return null;
   if (!Number.isFinite(event.currentTime) || event.currentTime < 0) return null;
   if (event.rate !== undefined &&
       (!Number.isFinite(event.rate) || event.rate <= 0)) return null;
@@ -113,12 +157,12 @@ export class RoomRegistry {
     this.rooms = new Map();
   }
 
-  create() {
+  create(video = null) {
     let code;
     do {
-      code = crypto.randomBytes(3).toString('base64url'); // 4 символа
+      code = randomCode(4);
     } while (this.rooms.has(code));
-    const room = new Room(code);
+    const room = new Room(code, video);
     this.rooms.set(code, room);
     return room;
   }

@@ -94,7 +94,55 @@ try {
     `неизвестная комната получила close ${missingClose.code}, ожидалось 4004`,
   );
 
-  console.log(`✓ комната ${code}: sync, reconnect и ошибки входа проверены`);
+  // видео в комнате: создание с видео, смена и жест «готов»
+  const videoRes = await fetch(`${base}/api/rooms`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ video: { provider: 'youtube', videoId: 'dQw4w9WgXcQ' } }),
+  });
+  assert(videoRes.status === 201, `POST /api/rooms с видео → ${videoRes.status}`);
+  const videoRoom = await videoRes.json();
+  const videoRoomUrl = `${wsBase}/ws?room=${encodeURIComponent(videoRoom.code)}`;
+
+  const host = createPeer(videoRoomUrl);
+  peers.push(host);
+  const guest = createPeer(videoRoomUrl);
+  peers.push(guest);
+  const joinedHost = await host.waitFor((message) => message.type === 'joined', 'joined для host');
+  const joinedGuest = await guest.waitFor((message) => message.type === 'joined', 'joined для guest');
+  assert(
+    joinedHost.video?.provider === 'youtube' && joinedHost.video?.videoId === 'dQw4w9WgXcQ',
+    'снапшот не отдал видео комнаты',
+  );
+  assert(joinedGuest.video?.videoId === 'dQw4w9WgXcQ', 'гость не получил видео комнаты');
+
+  const videoOnGuest = guest.waitFor((message) => message.type === 'video', 'video для guest');
+  host.send({ type: 'video', video: { provider: 'rutube', videoId: 'a'.repeat(32) } });
+  const videoMessage = await videoOnGuest;
+  assert(videoMessage.video?.provider === 'rutube', 'смена видео не дошла до напарника');
+
+  const playAfterVideo = guest.waitFor(
+    (message) => message.type === 'sync' && message.event?.type === 'play',
+    'play после смены видео',
+  );
+  host.send({
+    type: 'sync',
+    event: { type: 'play', currentTime: 5, rate: 1, ts: Date.now() },
+  });
+  await playAfterVideo;
+
+  const readyOnGuest = guest.waitFor((message) => message.type === 'peer-ready', 'peer-ready');
+  host.send({ type: 'ready' });
+  await readyOnGuest;
+
+  // статика фронтенда
+  const index = await fetch(`${base}/`);
+  const indexHtml = await index.text();
+  assert(index.status === 200 && indexHtml.includes('Synodic'), 'index.html не отдаётся');
+  const css = await fetch(`${base}/css/main.css`);
+  assert(css.status === 200, 'css не отдаётся');
+
+  console.log(`✓ комната ${code}: sync, reconnect, видео, ready, статика проверены`);
 } catch (error) {
   fail(error.message);
 } finally {

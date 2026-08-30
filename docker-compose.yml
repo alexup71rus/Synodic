@@ -1,0 +1,26 @@
+# Стек продакшена Synodic: приложение + Caddy (TLS-терминация, autocert).
+# Порт 8787 приложения проброшен только на localhost сервера — для
+# health-check'ов и тестов через SSH-туннель; снаружи всё ходит через Caddy.
+services:
+  app:
+    build: .
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:8787:8787"
+
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./deploy/caddy/Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - app
+
+volumes:
+  caddy_data:
+  caddy_config:
