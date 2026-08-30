@@ -19,6 +19,7 @@
     createForm: $('create-form'),
     create: $('create'),
     code: $('code'),
+    joinDisclosure: $('join-disclosure'),
     joinForm: $('join-form'),
     roomCode: $('room-code'),
     copy: $('copy'),
@@ -32,10 +33,12 @@
     changeVideoToggle: $('change-video-toggle'),
     changeVideoForm: $('change-video-form'),
     newVideoUrl: $('new-video-url'),
+    startFeedback: $('start-feedback'),
     feedback: $('feedback'),
   };
 
   const SESSION_KEY = 'synodic-room';
+  const peerPillRenderer = SynodicPeerPill.create(elements.peerPill);
 
   let connection = null;
   let engine = null;
@@ -44,10 +47,16 @@
   let peerOnline = false;
   let peerReady = false;
   let feedbackTimer = null;
+  let copyResetTimer = null;
+  let infoCloseTimer = null;
+  let viewportFrame = null;
+  let viewportSettleTimer = null;
 
   init();
 
   function init() {
+    initViewport();
+
     // отладочный доступ из консоли и автотестов
     window.__synodic = {
       get state() {
@@ -117,14 +126,52 @@
       showFeedback('Включаем новое видео', 'success');
     });
 
-    elements.info.addEventListener('click', () => elements.infoModal.showModal());
-    elements.infoClose.addEventListener('click', () => elements.infoModal.close());
+    elements.info.addEventListener('click', openInfo);
+    elements.infoClose.addEventListener('click', closeInfo);
     elements.infoModal.addEventListener('click', (event) => {
-      if (event.target === elements.infoModal) elements.infoModal.close();
+      if (event.target !== elements.infoModal) return;
+      const bounds = elements.infoModal.getBoundingClientRect();
+      const outside = event.clientX < bounds.left || event.clientX > bounds.right ||
+        event.clientY < bounds.top || event.clientY > bounds.bottom;
+      if (outside) closeInfo();
+    });
+    elements.infoModal.addEventListener('cancel', (event) => {
+      event.preventDefault();
+      closeInfo();
     });
 
     loadPosters();
     restoreSession();
+  }
+
+  /**
+   * Safari оставляет layout viewport прежней высоты, когда поднимается
+   * клавиатура. VisualViewport даёт действительно видимую часть страницы.
+   */
+  function initViewport() {
+    const viewport = window.visualViewport;
+
+    const update = () => {
+      cancelAnimationFrame(viewportFrame);
+      viewportFrame = requestAnimationFrame(() => {
+        const normalScale = !viewport || Math.abs(viewport.scale - 1) < 0.02;
+        const visibleHeight = normalScale && viewport ? viewport.height : window.innerHeight;
+        const keyboardOpen = !!viewport && normalScale && window.innerHeight - viewport.height > 120;
+
+        document.documentElement.style.setProperty('--app-height', `${Math.round(visibleHeight)}px`);
+        document.documentElement.dataset.keyboard = String(keyboardOpen);
+
+        clearTimeout(viewportSettleTimer);
+        if (!keyboardOpen || !(document.activeElement instanceof HTMLInputElement)) return;
+        viewportSettleTimer = setTimeout(() => {
+          document.activeElement?.scrollIntoView({ block: 'center', inline: 'nearest' });
+        }, 120);
+      });
+    };
+
+    update();
+    window.addEventListener('resize', update, { passive: true });
+    viewport?.addEventListener('resize', update, { passive: true });
   }
 
   // ─── комната ────────────────────────────────────────────────────────
@@ -153,13 +200,13 @@
 
     connection.on('joined', async (message) => {
       elements.roomCode.textContent = message.code;
+      updateCopyLabel(message.code);
       elements.code.value = message.code;
       showRoomView();
 
       // если напарник уже в комнате, peer-joined нам не придёт
       if (Number(message.peers) > 1) {
         peerOnline = true;
-        elements.copy.hidden = true;
         updatePeerPill('together');
       }
 
@@ -177,7 +224,6 @@
 
     connection.on('peer', ({ online }) => {
       peerOnline = online;
-      elements.copy.hidden = online;
       if (online) updatePeerPill('together');
       else {
         peerReady = false;
@@ -267,7 +313,8 @@
     armed = false;
     peerOnline = false;
     peerReady = false;
-    elements.copy.hidden = false;
+    clearTimeout(copyResetTimer);
+    delete elements.copy.dataset.copied;
     elements.armOverlay.hidden = true;
   }
 
@@ -367,6 +414,7 @@
     elements.connection.hidden = true;
     elements.videoUrl.value = '';
     elements.code.value = '';
+    elements.joinDisclosure.open = false;
     clearPlayerHost();
   }
 
@@ -383,9 +431,9 @@
     lost: 'Нет связи — переподключаемся',
   };
 
-  /** Органическая пара: один участник, слитые 1 + 1 или приглушённая потеря связи. */
+  /** Canvas-пилюля: один участник, мягкое раскрытие 1 + 1 или потеря связи. */
   function updatePeerPill(state) {
-    elements.peerPill.dataset.state = state;
+    peerPillRenderer.setState(state);
     elements.peerPill.title = PEER_TITLES[state];
     elements.peerPill.setAttribute('aria-label', PEER_TITLES[state]);
   }
@@ -400,10 +448,43 @@
     const link = `${location.origin}${location.pathname}?room=${code}`;
     try {
       await navigator.clipboard.writeText(link);
+      elements.copy.dataset.copied = 'true';
+      elements.copy.setAttribute('aria-label', 'Ссылка скопирована');
+      clearTimeout(copyResetTimer);
+      copyResetTimer = setTimeout(() => {
+        delete elements.copy.dataset.copied;
+        updateCopyLabel(code);
+      }, 1800);
       showFeedback('Ссылка скопирована — отправьте её напарнику', 'success');
     } catch {
       showError(`Не удалось скопировать. Ссылка: ${link}`);
     }
+  }
+
+  function updateCopyLabel(code) {
+    const label = code && code !== '····'
+      ? `Скопировать ссылку-приглашение, код ${code}`
+      : 'Скопировать ссылку-приглашение';
+    elements.copy.setAttribute('aria-label', label);
+    elements.copy.title = label;
+  }
+
+  function openInfo() {
+    clearTimeout(infoCloseTimer);
+    if (!elements.infoModal.open) elements.infoModal.showModal();
+    requestAnimationFrame(() => {
+      requestAnimationFrame(() => {
+        elements.infoModal.dataset.visible = 'true';
+      });
+    });
+  }
+
+  function closeInfo() {
+    if (!elements.infoModal.open) return;
+    delete elements.infoModal.dataset.visible;
+    clearTimeout(infoCloseTimer);
+    const duration = matchMedia('(prefers-reduced-motion: reduce)').matches ? 0 : 260;
+    infoCloseTimer = setTimeout(() => elements.infoModal.close(), duration);
   }
 
   async function runBusy(progressText, action) {
@@ -434,15 +515,18 @@
 
   function showFeedback(text, tone = 'error', autoHide = true) {
     clearTimeout(feedbackTimer);
-    elements.feedback.textContent = text;
-    elements.feedback.dataset.tone = tone;
-    elements.feedback.hidden = false;
+    const feedback = elements.startView.hidden ? elements.feedback : elements.startFeedback;
+    feedback.textContent = text;
+    feedback.dataset.tone = tone;
+    feedback.hidden = false;
     if (autoHide) feedbackTimer = setTimeout(clearFeedback, 3200);
   }
 
   function clearFeedback() {
     clearTimeout(feedbackTimer);
-    elements.feedback.hidden = true;
-    elements.feedback.textContent = '';
+    [elements.startFeedback, elements.feedback].forEach((feedback) => {
+      feedback.hidden = true;
+      feedback.textContent = '';
+    });
   }
 })();
