@@ -77,5 +77,33 @@ const SynodicLinks = (() => {
       if (url.protocol !== 'http:' && url.protocol !== 'https:') return null;
       return youtube(url) || rutube(url);
     },
+
+    /** Разбор с человеческим объяснением, почему ссылка не подошла. */
+    diagnose(raw) {
+      const text = String(raw || '').trim();
+      if (!text) return { source: null, message: 'Вставьте ссылку на видео' };
+      let url;
+      try {
+        url = new URL(text.startsWith('http') ? text : `https://${text}`);
+      } catch {
+        return { source: null, message: 'Это не похоже на ссылку' };
+      }
+      if (url.protocol !== 'http:' && url.protocol !== 'https:') {
+        return { source: null, message: 'Ссылка должна начинаться с http или https' };
+      }
+      const source = youtube(url) || rutube(url);
+      if (source) return { source };
+      const host = url.hostname.replace(/^www\./, '').replace(/^m\./, '');
+      const known = host === 'youtu.be' ||
+        host.endsWith('youtube.com') || host.endsWith('youtube-nocookie.com') ||
+        host.endsWith('rutube.ru');
+      if (known) {
+        return {
+          source: null,
+          message: 'Не удалось найти видео в этой ссылке — скопируйте её из адресной строки или «поделиться»',
+        };
+      }
+      return { source: null, message: 'Похоже, этот сервис не даёт встроить видео — поддерживаются YouTube и Rutube' };
+    },
   };
 })();

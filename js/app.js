@@ -12,6 +12,7 @@
     infoModal: $('info-modal'),
     infoClose: $('info-close'),
     startView: $('start-view'),
+    posters: $('posters'),
     roomView: $('room-view'),
     videoUrl: $('video-url'),
     createForm: $('create-form'),
@@ -20,8 +21,8 @@
     joinForm: $('join-form'),
     roomCode: $('room-code'),
     copy: $('copy'),
-    peerState: $('peer-state'),
-    peerLabel: $('peer-label'),
+    peerPill: $('peer-pill'),
+    peerPillLabel: $('peer-pill-label'),
     leave: $('leave'),
     playerHost: $('player-host'),
     armOverlay: $('arm-overlay'),
@@ -70,8 +71,8 @@
     elements.createForm.addEventListener('submit', (event) => {
       event.preventDefault();
       runBusy('Создаём комнату…', async () => {
-        const source = SynodicLinks.parse(elements.videoUrl.value);
-        if (!source) throw new Error('Это не похоже на ссылку YouTube или Rutube');
+        const { source, message } = SynodicLinks.diagnose(elements.videoUrl.value);
+        if (!source) throw new Error(message);
         const code = await SynodicNet.createRoom({
           provider: source.provider,
           videoId: source.videoId,
@@ -105,10 +106,11 @@
       elements.changeVideoForm.hidden = !hidden;
       if (hidden) elements.newVideoUrl.focus();
     });
-    elements.changeVideoForm.addEventListener('submit', (event) => {      event.preventDefault();
-      const source = SynodicLinks.parse(elements.newVideoUrl.value);
+    elements.changeVideoForm.addEventListener('submit', (event) => {
+      event.preventDefault();
+      const { source, message } = SynodicLinks.diagnose(elements.newVideoUrl.value);
       if (!source) {
-        showError('Не получилось распознать ссылку');
+        showError(message);
         return;
       }
       connection?.sendVideo({ provider: source.provider, videoId: source.videoId });
@@ -124,6 +126,7 @@
       if (event.target === elements.infoModal) elements.infoModal.close();
     });
 
+    loadPosters();
     restoreSession();
   }
 
@@ -140,10 +143,14 @@
     let mountedForVideo = null; // source, по которому смонтирован плеер
 
     connection.on('status', ({ connected, reconnecting }) => {
-      if (connected) setConnection('online', 'На связи');
-      else if (reconnecting) setConnection('error', 'Нет связи');
-      else setConnection('idle', 'Готов');
-      if (reconnecting) setPeerState(false, 'Переподключаемся…');
+      elements.connection.hidden = false;
+      if (connected) {
+        setConnection('online');
+        updatePeerPill(peerOnline ? 'together' : 'waiting');
+      } else if (reconnecting) {
+        setConnection('error', 'Нет связи');
+        updatePeerPill('lost');
+      }
     });
 
     connection.on('joined', async (message) => {
@@ -154,7 +161,8 @@
       // если напарник уже в комнате, peer-joined нам не придёт
       if (Number(message.peers) > 1) {
         peerOnline = true;
-        setPeerState(true, 'Оба на месте');
+        elements.copy.hidden = true;
+        updatePeerPill('together');
       }
 
       const source = knownSource || message.video;
@@ -171,10 +179,11 @@
 
     connection.on('peer', ({ online }) => {
       peerOnline = online;
-      if (online) setPeerState(true, 'Оба на месте');
+      elements.copy.hidden = online;
+      if (online) updatePeerPill('together');
       else {
         peerReady = false;
-        setPeerState(false, 'Ждём второго участника');
+        updatePeerPill('waiting');
       }
     });
 
@@ -259,6 +268,8 @@
     connection = null;
     armed = false;
     peerOnline = false;
+    peerReady = false;
+    elements.copy.hidden = false;
     elements.armOverlay.hidden = true;
   }
 
@@ -299,6 +310,37 @@
     if (!armed) showArmOverlay(true);
   }
 
+  // ─── витрина постеров (необязательная) ──────────────────────────────
+
+  /** Появляется, только если серверу выдали TMDB_TOKEN; иначе тихо молчим. */
+  async function loadPosters() {
+    try {
+      const res = await fetch('/api/posters');
+      if (!res.ok) return;
+      const { items } = await res.json();
+      if (!Array.isArray(items) || items.length === 0) return;
+
+      const strip = document.createElement('div');
+      strip.className = 'posters-strip';
+      strip.setAttribute('aria-hidden', 'true');
+      for (const item of items) {
+        const img = document.createElement('img');
+        img.src = item.poster;
+        img.alt = '';
+        img.title = item.title || '';
+        img.referrerPolicy = 'no-referrer';
+        strip.appendChild(img);
+      }
+      const note = document.createElement('p');
+      note.className = 'posters-note';
+      note.textContent = 'В топе на этой неделе · по данным TMDB';
+      elements.posters.replaceChildren(strip, note);
+      elements.posters.hidden = false;
+    } catch {
+      // витрина — украшение: без неё стартовый экран просто чище
+    }
+  }
+
   // ─── восстановление сессии ──────────────────────────────────────────
 
   function restoreSession() {
@@ -326,20 +368,36 @@
   function showStartView() {
     elements.roomView.hidden = true;
     elements.startView.hidden = false;
-    setConnection('idle', 'Готов');
+    elements.connection.hidden = true;
     elements.videoUrl.value = '';
     elements.code.value = '';
     clearPlayerHost();
   }
 
-  function setConnection(tone, label) {
+  function setConnection(tone, label = '') {
     elements.connection.dataset.tone = tone;
     elements.connectionLabel.textContent = label;
+    elements.connection.title = label ||
+      (tone === 'online' ? 'Связь с сервером установлена' : '');
   }
 
-  function setPeerState(online, label) {
-    elements.peerState.classList.toggle('online', online);
-    elements.peerLabel.textContent = label;
+  const PEER_TITLES = {
+    waiting: 'Ждём второго участника',
+    together: 'Оба на месте',
+    lost: 'Нет связи — переподключаемся',
+  };
+
+  /** Баббл-«светофор»: 1 → 1 + 1, состояние поясняет тултип. */
+  function updatePeerPill(state) {
+    const text = state === 'waiting' ? '1' : '1 + 1';
+    elements.peerPill.dataset.state = state;
+    elements.peerPill.title = PEER_TITLES[state];
+    if (elements.peerPillLabel.textContent !== text) {
+      elements.peerPillLabel.textContent = text;
+      elements.peerPill.classList.remove('pop');
+      void elements.peerPill.offsetWidth; // перезапуск анимации
+      elements.peerPill.classList.add('pop');
+    }
   }
 
   function normalizedCode() {

@@ -26,9 +26,9 @@
         </div>
         <div class="topbar-right">
           <button id="info" class="icon-button" type="button" aria-label="Как это работает">?</button>
-          <div id="connection" class="connection" data-tone="idle">
+          <div id="connection" class="connection" data-tone="idle" hidden>
             <span class="connection-dot" aria-hidden="true"></span>
-            <span id="connection-label">Готов</span>
+            <span id="connection-label"></span>
           </div>
         </div>
       </header>
@@ -37,12 +37,7 @@
         <!-- ─── Стартовый экран ─────────────────────────────────────────── -->
         <section id="start-view" class="view">
           <div class="hero">
-            <div class="night-window" aria-hidden="true">
-              <span class="window-moon"></span>
-              <span class="window-star star-one"></span>
-              <span class="window-star star-two"></span>
-              <span class="window-sill"></span>
-            </div>
+            <div id="posters" class="posters" hidden></div>
             <h2>Смотрите вместе</h2>
             <p>Пауза, перемотка и скорость — общие.</p>
           </div>
@@ -56,7 +51,7 @@
               inputmode="url"
               autocomplete="off"
               spellcheck="false"
-              placeholder="Ссылка на видео — YouTube или Rutube"
+              placeholder="Ссылка на видео"
               aria-describedby="feedback"
             />
             <button id="create" class="button button-primary" type="submit">Создать комнату</button>
@@ -83,18 +78,17 @@
         <!-- ─── Комната ─────────────────────────────────────────────────── -->
         <section id="room-view" class="view room-view" hidden>
           <div class="room-head">
-            <div id="peer-state" class="peer-state room-status">
-              <span class="pulse" aria-hidden="true"></span>
-              <span id="peer-label">Ждём второго участника</span>
+            <div class="room-id">
+              <span id="room-code" class="room-code" title="Код комнаты">····</span>
+              <span id="peer-pill" class="peer-pill" data-state="waiting" role="status" title="Ждём второго участника">
+                <span class="pill-dot" aria-hidden="true"></span>
+                <span id="peer-pill-label">1</span>
+              </span>
             </div>
-            <button id="leave" class="button button-quiet" type="button">Покинуть</button>
-          </div>
-
-          <div class="room-meta">
-            <button id="copy" class="room-code" type="button" aria-label="Скопировать ссылку-приглашение">
-              <span id="room-code">····</span>
-              <span class="copy-label"><span aria-hidden="true">⧉</span> Скопировать ссылку-приглашение</span>
-            </button>
+            <div class="room-tools">
+              <button id="copy" class="icon-button" type="button" aria-label="Скопировать ссылку-приглашение" title="Скопировать ссылку-приглашение">⧉</button>
+              <button id="leave" class="button button-quiet" type="button">Покинуть</button>
+            </div>
           </div>
 
           <div class="stage">
