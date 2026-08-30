@@ -10,7 +10,7 @@
  *
  * Протокол (JSON):
  *   клиент → сервер:  { type: 'sync', event: { type, currentTime, rate, ts } }
- *                     { type: 'video', video: { provider, videoId } }
+ *                     { type: 'video', video: { provider, videoId, startAt?, p? } }
  *                     { type: 'ready' } / { type: 'keepalive' }
  *   сервер → клиент:  { type: 'joined', code, peers, state, video }
  *                     { type: 'peer-joined' | 'peer-left', peers }
@@ -31,7 +31,7 @@ const VIDEO_HEARTBEAT_MS = 3 * 1000;
 const TRANSPORT_HEARTBEAT_MS = 30 * 1000;
 const BODY_LIMIT = 4 * 1024;
 const POSTERS_CACHE_MS = 12 * 60 * 60 * 1000;
-const POSTERS_COUNT = 6;
+const POSTERS_COUNT = 4;
 
 process.title = 'synodic-serve'; // чтобы deploy.sh мог делать pkill -x synodic-serve
 
@@ -39,11 +39,18 @@ const registry = new RoomRegistry();
 const staticDir = resolveStaticDir();
 
 const server = http.createServer(async (req, res) => {
-  const url = new URL(req.url, `http://${req.headers.host}`);
+  const url = new URL(req.url, 'http://synodic.local');
 
   if (req.method === 'POST' && url.pathname === '/api/rooms') {
-    const body = await readJsonBody(req);
-    const video = body ? normalizeVideo(body.video) : null;
+    const parsed = await readJsonBody(req);
+    if (!parsed.ok) return sendJson(res, parsed.status, { error: parsed.error });
+    const body = parsed.body;
+    if (body !== null && (typeof body !== 'object' || Array.isArray(body))) {
+      return sendJson(res, 400, { error: 'invalid json body' });
+    }
+    const hasVideo = body && Object.hasOwn(body, 'video');
+    const video = hasVideo ? normalizeVideo(body.video) : null;
+    if (hasVideo && !video) return sendJson(res, 400, { error: 'invalid video' });
     const room = registry.create(video);
     return sendJson(res, 201, { code: room.code });
   }
@@ -60,10 +67,10 @@ const server = http.createServer(async (req, res) => {
   return sendJson(res, 404, { error: 'not found' });
 });
 
-const wss = new WebSocketServer({ noServer: true });
+const wss = new WebSocketServer({ noServer: true, maxPayload: 16 * 1024 });
 
 server.on('upgrade', (req, socket, head) => {
-  const url = new URL(req.url, `http://${req.headers.host}`);
+  const url = new URL(req.url, 'http://synodic.local');
   if (url.pathname !== '/ws') return socket.destroy();
   const room = registry.get(url.searchParams.get('room'));
 
@@ -80,9 +87,9 @@ server.on('upgrade', (req, socket, head) => {
   });
 });
 
-setInterval(() => registry.sweep(), SWEEP_INTERVAL_MS).unref();
-setInterval(() => registry.heartbeat(), VIDEO_HEARTBEAT_MS).unref();
-setInterval(() => {
+const sweepTimer = setInterval(() => registry.sweep(), SWEEP_INTERVAL_MS);
+const videoHeartbeatTimer = setInterval(() => registry.heartbeat(), VIDEO_HEARTBEAT_MS);
+const transportHeartbeatTimer = setInterval(() => {
   for (const client of wss.clients) {
     if (!client.isAlive) {
       client.terminate();
@@ -91,7 +98,10 @@ setInterval(() => {
     client.isAlive = false;
     client.ping();
   }
-}, TRANSPORT_HEARTBEAT_MS).unref();
+}, TRANSPORT_HEARTBEAT_MS);
+sweepTimer.unref();
+videoHeartbeatTimer.unref();
+transportHeartbeatTimer.unref();
 
 server.listen(PORT, () => {
   console.log(`[synodic-serve] listening on :${PORT}` + (staticDir ? `, static: ${staticDir}` : ', static: нет'));
@@ -99,23 +109,25 @@ server.listen(PORT, () => {
 
 function readJsonBody(req) {
   return new Promise((resolve) => {
-    let raw = '';
+    const chunks = [];
+    let bytes = 0;
+    let tooLarge = false;
     req.on('data', (chunk) => {
-      raw += chunk;
-      if (raw.length > BODY_LIMIT) {
-        req.destroy();
-        resolve(null);
-      }
+      if (tooLarge) return;
+      bytes += chunk.length;
+      if (bytes > BODY_LIMIT) tooLarge = true;
+      else chunks.push(chunk);
     });
     req.on('end', () => {
-      if (!raw) return resolve(null);
+      if (tooLarge) return resolve({ ok: false, status: 413, error: 'body too large' });
+      if (chunks.length === 0) return resolve({ ok: true, body: null });
       try {
-        resolve(JSON.parse(raw));
+        resolve({ ok: true, body: JSON.parse(Buffer.concat(chunks).toString('utf8')) });
       } catch {
-        resolve(null);
+        resolve({ ok: false, status: 400, error: 'invalid json' });
       }
     });
-    req.on('error', () => resolve(null));
+    req.on('error', () => resolve({ ok: false, status: 400, error: 'request error' }));
   });
 }
 
@@ -160,3 +172,19 @@ async function handlePosters(res) {
     return sendJson(res, 200, { items: postersCache.items }); // отдаём stale-кэш
   }
 }
+
+let shuttingDown = false;
+function shutdown(signal) {
+  if (shuttingDown) return;
+  shuttingDown = true;
+  console.log(`[synodic-serve] ${signal}: завершаем соединения`);
+  clearInterval(sweepTimer);
+  clearInterval(videoHeartbeatTimer);
+  clearInterval(transportHeartbeatTimer);
+  for (const client of wss.clients) client.close(1012, 'server restart');
+  server.close(() => process.exit(0));
+  setTimeout(() => process.exit(1), 10000).unref();
+}
+
+process.once('SIGTERM', () => shutdown('SIGTERM'));
+process.once('SIGINT', () => shutdown('SIGINT'));

@@ -28,7 +28,7 @@ fi
 
 echo "→ 1/4  rsync бэкенд → ${REMOTE}:~/${DIR}, фронтенд → public/"
 rsync -az --delete \
-  --exclude node_modules --exclude .git --exclude logs --exclude public \
+  --exclude node_modules --exclude .git --exclude logs --exclude public --exclude .env \
   "$ROOT/" "${REMOTE}:${DIR}/"
 rsync -az --delete \
   --exclude .git --exclude .DS_Store \
@@ -49,7 +49,12 @@ ssh "$REMOTE" '
 '
 
 echo "→ 3/4  docker-стек (app + caddy)"
-ssh "$REMOTE" "cd ~/$DIR && docker compose up -d --build"
+ssh "$REMOTE" "cd ~/$DIR && \
+  docker compose config -q && \
+  docker run --rm -v \"\$PWD/deploy/caddy/Caddyfile:/etc/caddy/Caddyfile:ro\" \
+    caddy:2-alpine caddy validate --config /etc/caddy/Caddyfile --adapter caddyfile && \
+  docker compose up -d --build --force-recreate && \
+  docker compose exec -T caddy caddy reload --config /etc/caddy/Caddyfile --adapter caddyfile"
 
 echo "→ 4/4  health-check и smoke"
 ssh "$REMOTE" "node -e 'const url=\"http://127.0.0.1:8787/health\";let left=20;(async()=>{while(left--){try{const r=await fetch(url);if(r.ok){console.log(\"  \"+await r.text());return}}catch{}await new Promise(r=>setTimeout(r,500))}console.error(\"  FAIL: health-check timeout\");process.exit(1)})()'"

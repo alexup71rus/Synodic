@@ -10,7 +10,8 @@ HTTP:
 
 - `GET /` → статика фронтенда (`public/` после деплоя, `../SynodicWeb` в деве)
 - `POST /api/rooms` → `201 { "code": "…" }` — создать комнату;
-  тело: `{ "video": { "provider": "youtube|rutube", "videoId": "…" } }` (необязательно)
+  тело: `{ "video": { "provider": "youtube|rutube", "videoId": "…", "startAt": 0, "p": "…" } }`
+  (необязательно; `p` используется только для приватных ссылок Rutube)
 - `GET /health` → `200 { "ok": true, "rooms": N }`
 
 WebSocket: `/ws?room=<code>` — войти в комнату. Максимум 2 участника,
@@ -23,7 +24,7 @@ WebSocket: `/ws?room=<code>` — войти в комнату. Максимум 
 - клиент → сервер:
   - `{ type: 'sync', event: { type, currentTime, rate, ts } }`
     (`type`: `play`, `pause`, `seek` или `ratechange`)
-  - `{ type: 'video', video: { provider, videoId } }` — сменить видео
+  - `{ type: 'video', video: { provider, videoId, startAt?, p? } }` — сменить видео
   - `{ type: 'ready' }` — жест пользователя (напарник готов)
   - `{ type: 'keepalive' }`
 - сервер → клиент:
@@ -49,6 +50,21 @@ node ≥ 18.
 
     npm run smoke
 
+Невалидный JSON или источник видео получает `400`; размер тела запроса и
+WebSocket-сообщений ограничен. Параметры приватной ссылки Rutube и стартовая
+позиция проходят через сервер вместе с источником, но не пишутся в логи.
+
+### Постеры TMDB (необязательно)
+
+Витрина на стартовом экране включается только при наличии API key v3 TMDB:
+
+    cp .env.example .env
+    # впишите TMDB_TOKEN в .env
+
+Без ключа `/api/posters` отвечает пустым списком, и интерфейс остаётся цельным
+без заглушек. Данные кешируются на 12 часов; атрибуция TMDB показывается в
+диалоге «Как это работает» только вместе с постерами.
+
 ## Деплой на домашний сервер
 
 Одной командой (нужен SSH-ключ в `khdr@khodyr.netcraze.pro` и docker в группе
@@ -61,9 +77,8 @@ node ≥ 18.
 1. rsync бэкенда в `~/Documents/Projects/SynodicServe`, фронтенда → `public/`
 2. останавливает и удаляет старый user-systemd сервис `synodic-serve`
    (заменим docker-стеком; порт 8787 должен освободиться до старта)
-3. `docker compose up -d --build` — контейнеры `app` (этот сервер, порт
-   `127.0.0.1:8787` на хосте) и `caddy` (TLS-терминация, автосертификаты
-   Let's Encrypt, порты 80/443)
+3. проверяет Compose-конфигурацию и запускает контейнеры `app` (этот сервер,
+   порт `127.0.0.1:8787` на хосте) и `caddy` (порты 80/443)
 4. health-check и smoke-тест
 
 Проверка состояния и логов:
@@ -71,10 +86,17 @@ node ≥ 18.
     ssh khdr@khodyr.netcraze.pro 'cd ~/Documents/Projects/SynodicServe && docker compose ps'
     ssh khdr@khodyr.netcraze.pro 'cd ~/Documents/Projects/SynodicServe && docker compose logs -f --tail 50 app'
 
-Сертификат для `synodic.khodyr.netcraze.pro` Caddy получает сам (TLS-ALPN по
-порту 443) — роутер должен пробрасывать TCP 443 на сервер; веб-панель роутера
-придётся предварительно убрать с 443-го. Сертификаты живут в docker-томе
-`caddy_data` и продлеваются автоматически.
+Публичный TLS терминирует Keenetic своим wildcard-сертификатом. В публикации
+веб-приложения настроено:
+
+- `synodic.khodyr.netcraze.pro`;
+- клиент `00:16:96:ee:0d:79` (`192.168.1.99`);
+- HTTPS, порт `443`, свободный доступ.
+
+Keenetic обращается к серверу без SNI и подменяет `Host` на IP, поэтому Caddy
+отвечает и на домен, и на `192.168.1.99`, использует `default_sni` и внутренний
+сертификат. ACME здесь намеренно не используется. `.env` на сервере исключён
+из `rsync --delete`, поэтому локальный TMDB-ключ переживает повторный деплой.
 
 ## Структура
 

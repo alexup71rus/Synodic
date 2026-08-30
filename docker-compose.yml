@@ -5,11 +5,25 @@ services:
   app:
     build: .
     restart: unless-stopped
+    init: true
+    read_only: true
+    security_opt:
+      - no-new-privileges:true
+    cap_drop:
+      - ALL
+    stop_grace_period: 12s
     environment:
+      - NODE_ENV=production
       # витрина постеров на старте (необязательно): бесплатный ключ themoviedb.org
       - TMDB_TOKEN=${TMDB_TOKEN:-}
     ports:
       - "127.0.0.1:8787:8787"
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8787/health').then(r=>{if(!r.ok)process.exit(1)}).catch(()=>process.exit(1))"]
+      interval: 15s
+      timeout: 3s
+      retries: 3
+      start_period: 5s
 
   caddy:
     image: caddy:2-alpine
@@ -22,7 +36,8 @@ services:
       - caddy_data:/data
       - caddy_config:/config
     depends_on:
-      - app
+      app:
+        condition: service_healthy
 
 volumes:
   caddy_data:

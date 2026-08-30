@@ -4,7 +4,10 @@ import crypto from 'node:crypto';
 
 const IDLE_ROOM_TTL_MS = 12 * 60 * 60 * 1000; // пустые комнаты прибираем через 12 ч
 const EVENT_TYPES = new Set(['play', 'pause', 'seek', 'ratechange']);
-const PROVIDERS = new Set(['youtube', 'rutube']);
+const VIDEO_ID_PATTERNS = {
+  youtube: /^[A-Za-z0-9_-]{11}$/,
+  rutube: /^[0-9a-f]{32}$/i,
+};
 // алфавит без регистра и похожих символов (0/O, 1/I/L): код можно
 // вписывать в любом регистре и диктовать по телефону
 const CODE_ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
@@ -13,9 +16,20 @@ const CODE_ALPHABET = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
 export function normalizeVideo(video) {
   if (!video || typeof video !== 'object') return null;
   const { provider, videoId } = video;
-  if (!PROVIDERS.has(provider)) return null;
-  if (typeof videoId !== 'string' || !/^[A-Za-z0-9_-]{5,64}$/.test(videoId)) return null;
-  return { provider, videoId };
+  if (!VIDEO_ID_PATTERNS[provider]?.test(videoId)) return null;
+
+  const normalized = { provider, videoId };
+  if (video.startAt !== undefined) {
+    const startAt = Number(video.startAt);
+    if (!Number.isFinite(startAt) || startAt < 0 || startAt > 7 * 24 * 60 * 60) return null;
+    normalized.startAt = Math.floor(startAt);
+  }
+  if (provider === 'rutube' && video.p !== undefined) {
+    if (typeof video.p !== 'string' || video.p.length === 0 || video.p.length > 512 ||
+        /[\u0000-\u001f\u007f]/.test(video.p)) return null;
+    normalized.p = video.p;
+  }
+  return normalized;
 }
 
 export class Room {
@@ -137,7 +151,8 @@ function randomCode(length) {
   return code;
 }
 
-function normalizeEvent(event) {  if (!event || !EVENT_TYPES.has(event.type)) return null;
+function normalizeEvent(event) {
+  if (!event || !EVENT_TYPES.has(event.type)) return null;
   if (!Number.isFinite(event.currentTime) || event.currentTime < 0) return null;
   if (event.rate !== undefined &&
       (!Number.isFinite(event.rate) || event.rate <= 0)) return null;
@@ -168,7 +183,7 @@ export class RoomRegistry {
   }
 
   get(code) {
-    return (typeof code === 'string' && this.rooms.get(code)) || null;
+    return (typeof code === 'string' && this.rooms.get(code.toUpperCase())) || null;
   }
 
   size() {

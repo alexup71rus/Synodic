@@ -30,7 +30,8 @@ try {
     (message) => message.type === 'peer-joined',
     'peer-joined для A',
   );
-  const b = createPeer(roomUrl);
+  // сервер принимает код в любом регистре, как обещает UI
+  const b = createPeer(`${wsBase}/ws?room=${encodeURIComponent(code.toLowerCase())}`);
   peers.push(b);
   const joinedB = await b.waitFor((message) => message.type === 'joined', 'joined для B');
   assert(joinedB.peers === 2, `B получил peers=${joinedB.peers}, ожидалось 2`);
@@ -98,7 +99,9 @@ try {
   const videoRes = await fetch(`${base}/api/rooms`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ video: { provider: 'youtube', videoId: 'dQw4w9WgXcQ' } }),
+    body: JSON.stringify({
+      video: { provider: 'youtube', videoId: 'dQw4w9WgXcQ', startAt: 37 },
+    }),
   });
   assert(videoRes.status === 201, `POST /api/rooms с видео → ${videoRes.status}`);
   const videoRoom = await videoRes.json();
@@ -114,12 +117,18 @@ try {
     joinedHost.video?.provider === 'youtube' && joinedHost.video?.videoId === 'dQw4w9WgXcQ',
     'снапшот не отдал видео комнаты',
   );
+  assert(joinedHost.video?.startAt === 37, 'снапшот потерял стартовую позицию');
   assert(joinedGuest.video?.videoId === 'dQw4w9WgXcQ', 'гость не получил видео комнаты');
 
   const videoOnGuest = guest.waitFor((message) => message.type === 'video', 'video для guest');
-  host.send({ type: 'video', video: { provider: 'rutube', videoId: 'a'.repeat(32) } });
+  host.send({
+    type: 'video',
+    video: { provider: 'rutube', videoId: 'a'.repeat(32), p: 'private_token-1', startAt: 12 },
+  });
   const videoMessage = await videoOnGuest;
   assert(videoMessage.video?.provider === 'rutube', 'смена видео не дошла до напарника');
+  assert(videoMessage.video?.p === 'private_token-1', 'смена видео потеряла приватный параметр');
+  assert(videoMessage.video?.startAt === 12, 'смена видео потеряла стартовую позицию');
 
   const playAfterVideo = guest.waitFor(
     (message) => message.type === 'sync' && message.event?.type === 'play',
@@ -141,6 +150,13 @@ try {
   assert(index.status === 200 && indexHtml.includes('Synodic'), 'index.html не отдаётся');
   const css = await fetch(`${base}/css/main.css`);
   assert(css.status === 200, 'css не отдаётся');
+
+  const invalidVideo = await fetch(`${base}/api/rooms`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ video: { provider: 'youtube', videoId: 'bad' } }),
+  });
+  assert(invalidVideo.status === 400, `невалидное видео → ${invalidVideo.status}, ожидалось 400`);
 
   console.log(`✓ комната ${code}: sync, reconnect, видео, ready, статика проверены`);
 } catch (error) {
