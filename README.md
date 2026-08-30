@@ -1,38 +1,48 @@
 # SynodicServe
 
-Серверная часть Synodic: комнаты на двоих и realtime-обмен событиями видео
-между расширениями [SynodicExt](../SynodicExt). Видео не стримится —
+Серверная часть Synodic: комнаты на двоих, realtime-обмен событиями плеера
+и раздача фронтенда [SynodicWeb](../SynodicWeb). Видео не стримится —
 синхронизируется только состояние просмотра (play / pause / seek / скорость).
 
 ## API
 
 HTTP:
 
-- `POST /api/rooms` → `201 { "code": "…" }` — создать комнату
+- `GET /` → статика фронтенда (`public/` после деплоя, `../SynodicWeb` в деве)
+- `POST /api/rooms` → `201 { "code": "…" }` — создать комнату;
+  тело: `{ "video": { "provider": "youtube|rutube", "videoId": "…" } }` (необязательно)
 - `GET /health` → `200 { "ok": true, "rooms": N }`
 
 WebSocket: `/ws?room=<code>` — войти в комнату. Максимум 2 участника,
 третьему придёт close-код `4000`, для неизвестной комнаты — `4004`.
+Код комнаты — 4 символа из алфавита без похожих знаков
+(`ABCDEFGHJKMNPQRSTUVWXYZ23456789`), регистр не важен.
 
 Протокол (JSON):
 
-- клиент → сервер: `{ type: 'sync', event: { type, currentTime, rate, ts } }`
-  (`type`: `play`, `pause`, `seek` или `ratechange`) и `{ type: 'keepalive' }`
-- сервер → клиент: `joined` (со снапшотом состояния и числом участников),
-  `peer-joined`, `peer-left`, `sync`
+- клиент → сервер:
+  - `{ type: 'sync', event: { type, currentTime, rate, ts } }`
+    (`type`: `play`, `pause`, `seek` или `ratechange`)
+  - `{ type: 'video', video: { provider, videoId } }` — сменить видео
+  - `{ type: 'ready' }` — жест пользователя (напарник готов)
+  - `{ type: 'keepalive' }`
+- сервер → клиент:
+  - `joined` (снапшотом состояния, видео и числом участников)
+  - `peer-joined`, `peer-left`, `peer-ready`
+  - `sync` (событие или heartbeat), `video`
 
 Событие `sync` рассылается второму участнику и обновляет снапшот комнаты,
-поэтому опоздавший при входе сразу получает актуальное состояние.
-Во время воспроизведения сервер раз в 3 с рассылает обоим участникам общий
-`heartbeat`, а транспортный ping/pong закрывает зависшие соединения, чтобы
-клиент мог переподключиться.
+поэтому опоздавший при входе сразу получает актуальное состояние. Смена видео
+сбрасывает снапшот (новое видео — просмотр заново). Во время воспроизведения
+сервер раз в 3 с рассылает обоим участникам общий `heartbeat`, а транспортный
+ping/pong закрывает зависшие соединения, чтобы клиент переподключился.
 
 ## Разработка
 
 node ≥ 18.
 
     npm install
-    npm run dev     # node --watch
+    npm run dev     # node --watch; статика берётся из ../SynodicWeb
     npm start
 
 Проверка end-to-end (сервер должен быть запущен):
@@ -41,29 +51,36 @@ node ≥ 18.
 
 ## Деплой на домашний сервер
 
-Одной командой (нужен SSH-ключ в `khdr@khodyr.netcraze.pro`):
+Одной командой (нужен SSH-ключ в `khdr@khodyr.netcraze.pro` и docker в группе
+пользователя):
 
     scripts/deploy.sh
 
-Что делает: rsync исходников в `~/Documents/Projects/SynodicServe` →
-`npm ci --omit=dev` → установка/перезапуск user-systemd unit → health-check →
-smoke-тест. Скрипт можно запускать из любой папки. Цель
-переопределяется переменными `SYNODIC_REMOTE`, `SYNODIC_DIR`, `PORT`.
+Что делает:
 
-Unit `synodic-serve.service` включён в автозапуск и использует
-`Restart=always`. Код не обновляется автоматически: новая версия появляется
-только после следующего запуска `scripts/deploy.sh`. Проверка состояния и логов:
+1. rsync бэкенда в `~/Documents/Projects/SynodicServe`, фронтенда → `public/`
+2. останавливает и удаляет старый user-systemd сервис `synodic-serve`
+   (заменим docker-стеком; порт 8787 должен освободиться до старта)
+3. `docker compose up -d --build` — контейнеры `app` (этот сервер, порт
+   `127.0.0.1:8787` на хосте) и `caddy` (TLS-терминация, автосертификаты
+   Let's Encrypt, порты 80/443)
+4. health-check и smoke-тест
 
-    ssh khdr@khodyr.netcraze.pro 'systemctl --user status synodic-serve --no-pager'
-    ssh khdr@khodyr.netcraze.pro 'journalctl --user -u synodic-serve -n 50 --no-pager'
+Проверка состояния и логов:
 
-Не забыть при первом деплое: открыть порт (ufw) и, если напарник не в локальной
-сети, пробросить порт на роутере (сейчас снаружи открыт только SSH).
+    ssh khdr@khodyr.netcraze.pro 'cd ~/Documents/Projects/SynodicServe && docker compose ps'
+    ssh khdr@khodyr.netcraze.pro 'cd ~/Documents/Projects/SynodicServe && docker compose logs -f --tail 50 app'
 
-Позже: TLS-терминация.
+Сертификат для `synodic.khodyr.netcraze.pro` Caddy получает сам (TLS-ALPN по
+порту 443) — роутер должен пробрасывать TCP 443 на сервер; веб-панель роутера
+придётся предварительно убрать с 443-го. Сертификаты живут в docker-томе
+`caddy_data` и продлеваются автоматически.
 
 ## Структура
 
 - `src/index.js` — HTTP + WebSocket, точка входа
-- `src/rooms.js` — комнаты: участники, снапшот состояния, рассылка, уборка пустых
-- `systemd/synodic-serve.service` — шаблон постоянного user-systemd сервиса
+- `src/rooms.js` — комнаты: участники, видео, снапшот состояния, рассылка
+- `src/static.js` — раздача статики фронтенда
+- `Dockerfile`, `docker-compose.yml`, `deploy/caddy/Caddyfile` — прод-стек
+- `scripts/smoke.mjs` — end-to-end тест
+- `scripts/deploy.sh` — деплой
