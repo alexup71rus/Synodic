@@ -197,7 +197,7 @@ input:focus-visible, .button:focus-visible { outline: 2px solid var(--moon); out
 /* ─── комната ──────────────────────────────────────────────────────── */
 
 .room-head { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 16px; }
-.room-id { flex-wrap: wrap; gap: 10px; }
+.room-id { flex-wrap: wrap; gap: 14px; }
 .room-tools { gap: 10px; }
 .room-tools .button-quiet { min-height: 36px; }
 
@@ -217,29 +217,74 @@ input:focus-visible, .button:focus-visible { outline: 2px solid var(--moon); out
   text-indent: 0.24em;
 }
 
-/* «светофор» участников: 1 → 1 + 1, состояние поясняет тултип */
-.peer-pill {
-  display: inline-flex;
-  align-items: center;
-  gap: 7px;
-  height: 36px;
-  padding: 0 12px;
-  border: 1px solid rgba(216, 174, 101, 0.32);
-  border-radius: 999px;
-  color: var(--muted);
-  background: rgba(216, 174, 101, 0.07);
-  font-size: 12px;
-  font-weight: 700;
-  letter-spacing: 0.04em;
-  transition: color 200ms ease, background-color 200ms ease, border-color 200ms ease;
+/* «склеивающиеся пузыри»: один ждёт, второй упруго приклеивается */
+.peer-pill { display: inline-flex; align-items: center; height: 36px; }
+.peer-pill svg { display: block; overflow: visible; }
+.peer-pill text {
+  font-family: Inter, ui-sans-serif, system-ui, sans-serif;
+  font-weight: 800;
+  text-anchor: middle;
 }
-.pill-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--warning); box-shadow: 0 0 0 0 rgba(216, 174, 101, 0.22); animation: pulse 1.8s infinite; }
-.peer-pill[data-state="together"] { color: var(--success); border-color: rgba(169, 189, 145, 0.4); background: rgba(169, 189, 145, 0.08); }
-.peer-pill[data-state="together"] .pill-dot { background: var(--success); animation: none; }
-.peer-pill[data-state="lost"] { color: var(--faint); border-color: var(--line); background: transparent; }
-.peer-pill[data-state="lost"] .pill-dot { background: #706e6c; }
-.peer-pill.pop { animation: pill-pop 320ms ease; }
-@keyframes pill-pop { 0% { transform: scale(0.9); } 60% { transform: scale(1.05); } 100% { transform: scale(1); } }
+.peer-pill circle { transition: stroke 240ms ease, fill 240ms ease; }
+.peer-pill .bubble-a { transform-box: fill-box; transform-origin: center; transition: transform 300ms cubic-bezier(0.34, 1.56, 0.64, 1); }
+.peer-pill .bubble-b { transform-box: fill-box; transform-origin: center; }
+.peer-pill .bubble-a text { font-size: 13px; fill: var(--warning); }
+.peer-pill .bubble-b text { font-size: 11.5px; fill: var(--success); opacity: 0; transition: opacity 200ms ease; }
+.peer-pill .bubble-a circle {
+  fill: rgba(216, 174, 101, 0.08);
+  stroke: rgba(216, 174, 101, 0.55);
+  stroke-width: 1.4;
+  animation: bubble-breathe 2.6s ease-in-out infinite;
+}
+.peer-pill .bubble-b circle {
+  fill: none;
+  stroke: rgba(239, 221, 184, 0.25);
+  stroke-width: 1.2;
+  stroke-dasharray: 3 4;
+  animation: bubble-breathe 2.6s ease-in-out infinite;
+}
+.peer-pill .plus path {
+  stroke: var(--faint);
+  stroke-width: 1.5;
+  stroke-linecap: round;
+  opacity: 0;
+  transform: scale(0.4) rotate(-40deg);
+  transform-box: fill-box;
+  transform-origin: center;
+  transition: opacity 260ms ease, transform 260ms cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+/* оба на месте: пузыри склеились и позеленели */
+.peer-pill[data-state="together"] .bubble-a circle { fill: rgba(169, 189, 145, 0.14); stroke: rgba(169, 189, 145, 0.65); animation: none; }
+.peer-pill[data-state="together"] .bubble-a text { fill: var(--success); }
+.peer-pill[data-state="together"] .bubble-a { transform: translateX(-2px); }
+.peer-pill[data-state="together"] .bubble-b circle { fill: rgba(169, 189, 145, 0.14); stroke: rgba(169, 189, 145, 0.65); stroke-dasharray: none; animation: none; }
+.peer-pill[data-state="together"] .bubble-b text { opacity: 1; }
+.peer-pill[data-state="together"] .plus path { opacity: 1; transform: scale(1) rotate(0deg); }
+.peer-pill[data-state="together"] .bubble-a,
+.peer-pill[data-state="together"] .bubble-b { filter: drop-shadow(0 0 6px rgba(169, 189, 145, 0.4)); }
+
+/* связь потеряна: второй не исчезает, но всё гаснет */
+.peer-pill[data-state="lost"] .bubble-a circle,
+.peer-pill[data-state="lost"] .bubble-b circle { stroke: rgba(119, 115, 111, 0.4); animation: bubble-breathe 1.2s ease-in-out infinite; }
+.peer-pill[data-state="lost"] .bubble-a circle { fill: none; }
+.peer-pill[data-state="lost"] .bubble-a text,
+.peer-pill[data-state="lost"] .bubble-b text { fill: var(--faint); }
+.peer-pill[data-state="lost"] .bubble-b text { opacity: 1; }
+.peer-pill[data-state="lost"] .plus path { opacity: 1; stroke: rgba(119, 115, 111, 0.55); transform: scale(1) rotate(0deg); }
+
+/* приход второго: упруго «приклеивается» к первому */
+.peer-pill.pop .bubble-b { animation: bubble-in 460ms cubic-bezier(0.34, 1.56, 0.64, 1); }
+@keyframes bubble-in {
+  0% { transform: scale(0.2); opacity: 0; }
+  55% { opacity: 1; }
+  70% { transform: scale(1.12); }
+  100% { transform: scale(1); opacity: 1; }
+}
+@keyframes bubble-breathe {
+  0%, 100% { stroke-opacity: 0.55; }
+  50% { stroke-opacity: 1; }
+}
 @keyframes pulse { 70% { box-shadow: 0 0 0 7px rgba(216, 174, 101, 0); } 100% { box-shadow: 0 0 0 0 rgba(216, 174, 101, 0); } }
 
 /* сцена с плеером */
@@ -276,7 +321,7 @@ input:focus-visible, .button:focus-visible { outline: 2px solid var(--moon); out
   align-items: center;
   justify-content: center;
   padding: 24px;
-  background: rgba(12, 12, 16, 0.55);
+  background: rgba(12, 12, 16, 0.6);
 }
 .arm-panel { max-width: 320px; padding: 18px 22px 20px; border: 1px solid var(--line); border-radius: 16px; background: rgba(34, 33, 38, 0.92); box-shadow: 0 16px 32px rgba(0, 0, 0, 0.3); text-align: center; }
 .arm-moon {

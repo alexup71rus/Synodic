@@ -22,7 +22,6 @@
     roomCode: $('room-code'),
     copy: $('copy'),
     peerPill: $('peer-pill'),
-    peerPillLabel: $('peer-pill-label'),
     leave: $('leave'),
     playerHost: $('player-host'),
     armOverlay: $('arm-overlay'),
@@ -387,15 +386,15 @@
     lost: 'Нет связи — переподключаемся',
   };
 
-  /** Баббл-«светофор»: 1 → 1 + 1, состояние поясняет тултип. */
+  /** Баббл «1 → 1+1»: второй пузырь упруго приклеивается, тултип поясняет. */
   function updatePeerPill(state) {
-    const text = state === 'waiting' ? '1' : '1 + 1';
+    const wasWaiting = elements.peerPill.dataset.state === 'waiting';
     elements.peerPill.dataset.state = state;
     elements.peerPill.title = PEER_TITLES[state];
-    if (elements.peerPillLabel.textContent !== text) {
-      elements.peerPillLabel.textContent = text;
+    elements.peerPill.setAttribute('aria-label', PEER_TITLES[state]);
+    if (state !== 'waiting' && wasWaiting) {
       elements.peerPill.classList.remove('pop');
-      void elements.peerPill.offsetWidth; // перезапуск анимации
+      void elements.peerPill.offsetWidth; // перезапуск анимации склеивания
       elements.peerPill.classList.add('pop');
     }
   }
