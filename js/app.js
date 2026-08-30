@@ -386,17 +386,11 @@
     lost: 'Нет связи — переподключаемся',
   };
 
-  /** Баббл «1 → 1+1»: второй пузырь упруго приклеивается, тултип поясняет. */
+  /** Жидкий баббл: вторая капля подплывает и сливается; тултип поясняет состояние. */
   function updatePeerPill(state) {
-    const wasWaiting = elements.peerPill.dataset.state === 'waiting';
     elements.peerPill.dataset.state = state;
     elements.peerPill.title = PEER_TITLES[state];
     elements.peerPill.setAttribute('aria-label', PEER_TITLES[state]);
-    if (state !== 'waiting' && wasWaiting) {
-      elements.peerPill.classList.remove('pop');
-      void elements.peerPill.offsetWidth; // перезапуск анимации склеивания
-      elements.peerPill.classList.add('pop');
-    }
   }
 
   function normalizedCode() {

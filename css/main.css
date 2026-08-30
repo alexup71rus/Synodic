@@ -217,73 +217,90 @@ input:focus-visible, .button:focus-visible { outline: 2px solid var(--moon); out
   text-indent: 0.24em;
 }
 
-/* «склеивающиеся пузыри»: один ждёт, второй упруго приклеивается */
-.peer-pill { display: inline-flex; align-items: center; height: 36px; }
+/* «жидкие» пузыри: вторая капля подплывает и сливается с первой (goo-фильтр) */
+.peer-pill { display: inline-flex; align-items: center; height: 44px; }
 .peer-pill svg { display: block; overflow: visible; }
 .peer-pill text {
   font-family: Inter, ui-sans-serif, system-ui, sans-serif;
   font-weight: 800;
   text-anchor: middle;
 }
-.peer-pill circle { transition: stroke 240ms ease, fill 240ms ease; }
-.peer-pill .bubble-a { transform-box: fill-box; transform-origin: center; transition: transform 300ms cubic-bezier(0.34, 1.56, 0.64, 1); }
-.peer-pill .bubble-b { transform-box: fill-box; transform-origin: center; }
-.peer-pill .bubble-a text { font-size: 13px; fill: var(--warning); }
-.peer-pill .bubble-b text { font-size: 11.5px; fill: var(--success); opacity: 0; transition: opacity 200ms ease; }
-.peer-pill .bubble-a circle {
-  fill: rgba(216, 174, 101, 0.08);
-  stroke: rgba(216, 174, 101, 0.55);
-  stroke-width: 1.4;
-  animation: bubble-breathe 2.6s ease-in-out infinite;
-}
-.peer-pill .bubble-b circle {
-  fill: none;
-  stroke: rgba(239, 221, 184, 0.25);
-  stroke-width: 1.2;
-  stroke-dasharray: 3 4;
-  animation: bubble-breathe 2.6s ease-in-out infinite;
-}
-.peer-pill .plus path {
-  stroke: var(--faint);
-  stroke-width: 1.5;
+
+/* капли-силуэты под фильтром: цвета сплошные — порог альфы съедает полупрозрачность */
+.peer-pill .goo-wrap { filter: drop-shadow(0 0 6px rgba(216, 174, 101, 0.16)); transition: filter 400ms ease; }
+.peer-pill .blob-a { fill: #6d5a33; transition: fill 400ms ease; }
+.peer-pill .blob-b { fill: #5d7150; }
+.peer-pill .blob-plus { fill: #5d7150; }
+.peer-pill .blob-plus, .peer-pill .ring-plus, .peer-pill .blob-b, .peer-pill .ring-b, .peer-pill .num-b { opacity: 0; }
+
+/* ободки, призрак и цифры — поверх, без фильтра */
+.peer-pill .ring-a { fill: none; stroke: rgba(216, 174, 101, 0.5); stroke-width: 1.4; animation: ring-breathe 2.6s ease-in-out infinite; transition: stroke 400ms ease; }
+.peer-pill .ring-b { fill: none; stroke: rgba(169, 189, 145, 0.6); stroke-width: 1.4; }
+.peer-pill .ring-plus { fill: none; stroke: rgba(169, 189, 145, 0.6); stroke-width: 1.2; }
+.peer-pill .ghost { fill: none; stroke: rgba(239, 221, 184, 0.28); stroke-width: 1.2; stroke-dasharray: 3 4; animation: ghost-bob 3.2s ease-in-out infinite; transition: opacity 300ms ease; }
+.peer-pill .num-a { font-size: 13px; fill: #ecd9a8; transition: fill 400ms ease; }
+.peer-pill .num-b { font-size: 11.5px; fill: #dbe4d2; }
+.peer-pill .plus {
+  stroke: #dbe4d2;
+  stroke-width: 1.6;
   stroke-linecap: round;
+  fill: none;
   opacity: 0;
-  transform: scale(0.4) rotate(-40deg);
+  transform: translateX(40px) scale(0.4) rotate(-40deg);
   transform-box: fill-box;
   transform-origin: center;
-  transition: opacity 260ms ease, transform 260ms cubic-bezier(0.34, 1.56, 0.64, 1);
+  transition: transform 720ms cubic-bezier(0.3, 1.4, 0.4, 1), opacity 260ms ease 300ms, stroke 400ms ease;
 }
 
-/* оба на месте: пузыри склеились и позеленели */
-.peer-pill[data-state="together"] .bubble-a circle { fill: rgba(169, 189, 145, 0.14); stroke: rgba(169, 189, 145, 0.65); animation: none; }
-.peer-pill[data-state="together"] .bubble-a text { fill: var(--success); }
-.peer-pill[data-state="together"] .bubble-a { transform: translateX(-2px); }
-.peer-pill[data-state="together"] .bubble-b circle { fill: rgba(169, 189, 145, 0.14); stroke: rgba(169, 189, 145, 0.65); stroke-dasharray: none; animation: none; }
-.peer-pill[data-state="together"] .bubble-b text { opacity: 1; }
-.peer-pill[data-state="together"] .plus path { opacity: 1; transform: scale(1) rotate(0deg); }
-.peer-pill[data-state="together"] .bubble-a,
-.peer-pill[data-state="together"] .bubble-b { filter: drop-shadow(0 0 6px rgba(169, 189, 145, 0.4)); }
-
-/* связь потеряна: второй не исчезает, но всё гаснет */
-.peer-pill[data-state="lost"] .bubble-a circle,
-.peer-pill[data-state="lost"] .bubble-b circle { stroke: rgba(119, 115, 111, 0.4); animation: bubble-breathe 1.2s ease-in-out infinite; }
-.peer-pill[data-state="lost"] .bubble-a circle { fill: none; }
-.peer-pill[data-state="lost"] .bubble-a text,
-.peer-pill[data-state="lost"] .bubble-b text { fill: var(--faint); }
-.peer-pill[data-state="lost"] .bubble-b text { opacity: 1; }
-.peer-pill[data-state="lost"] .plus path { opacity: 1; stroke: rgba(119, 115, 111, 0.55); transform: scale(1) rotate(0deg); }
-
-/* приход второго: упруго «приклеивается» к первому */
-.peer-pill.pop .bubble-b { animation: bubble-in 460ms cubic-bezier(0.34, 1.56, 0.64, 1); }
-@keyframes bubble-in {
-  0% { transform: scale(0.2); opacity: 0; }
-  55% { opacity: 1; }
-  70% { transform: scale(1.12); }
-  100% { transform: scale(1); opacity: 1; }
+/* вторая капля и капля-плюс подплывают справа и встают на свои места */
+.peer-pill .slide-b,
+.peer-pill .slide-plus {
+  transform-box: fill-box;
+  transform-origin: center;
+  transform: translateX(40px);
+  transition: transform 720ms cubic-bezier(0.3, 1.4, 0.4, 1), opacity 300ms ease;
 }
-@keyframes bubble-breathe {
+
+/* оба на месте: три капли слились в одну жидкую «1+1» */
+.peer-pill[data-state="together"] .slide-b,
+.peer-pill[data-state="together"] .slide-plus { transform: translateX(0); }
+.peer-pill[data-state="together"] .blob-plus,
+.peer-pill[data-state="together"] .ring-plus,
+.peer-pill[data-state="together"] .blob-b,
+.peer-pill[data-state="together"] .ring-b,
+.peer-pill[data-state="together"] .num-b { opacity: 1; }
+.peer-pill[data-state="together"] .blob-a { fill: #5d7150; }
+.peer-pill[data-state="together"] .ring-a { stroke: rgba(169, 189, 145, 0.6); animation: none; }
+.peer-pill[data-state="together"] .num-a { fill: #dbe4d2; }
+.peer-pill[data-state="together"] .ghost { opacity: 0; animation: none; }
+.peer-pill[data-state="together"] .plus { opacity: 1; transform: translateX(0) scale(1) rotate(0deg); }
+.peer-pill[data-state="together"] .goo-wrap { filter: drop-shadow(0 0 7px rgba(169, 189, 145, 0.3)); }
+
+/* связь потеряна: слитая капля никуда не девается, просто гаснет */
+.peer-pill[data-state="lost"] .slide-b,
+.peer-pill[data-state="lost"] .slide-plus { transform: translateX(0); }
+.peer-pill[data-state="lost"] .blob-plus,
+.peer-pill[data-state="lost"] .ring-plus,
+.peer-pill[data-state="lost"] .blob-b,
+.peer-pill[data-state="lost"] .ring-b,
+.peer-pill[data-state="lost"] .num-b { opacity: 1; }
+.peer-pill[data-state="lost"] .blob-a,
+.peer-pill[data-state="lost"] .blob-b { fill: #43434a; }
+.peer-pill[data-state="lost"] .ring-a { stroke: rgba(119, 115, 111, 0.4); animation: ring-breathe 1.2s ease-in-out infinite; }
+.peer-pill[data-state="lost"] .ring-b { stroke: rgba(119, 115, 111, 0.4); }
+.peer-pill[data-state="lost"] .num-a,
+.peer-pill[data-state="lost"] .num-b { fill: var(--faint); }
+.peer-pill[data-state="lost"] .ghost { opacity: 0; animation: none; }
+.peer-pill[data-state="lost"] .plus { opacity: 1; stroke: rgba(119, 115, 111, 0.55); transform: translateX(0) scale(1) rotate(0deg); }
+.peer-pill[data-state="lost"] .goo-wrap { filter: none; }
+
+@keyframes ring-breathe {
   0%, 100% { stroke-opacity: 0.55; }
   50% { stroke-opacity: 1; }
+}
+@keyframes ghost-bob {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-1.5px); }
 }
 @keyframes pulse { 70% { box-shadow: 0 0 0 7px rgba(216, 174, 101, 0); } 100% { box-shadow: 0 0 0 0 rgba(216, 174, 101, 0); } }
 

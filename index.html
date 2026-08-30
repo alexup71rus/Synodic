@@ -81,17 +81,29 @@
             <div class="room-id">
               <span id="room-code" class="room-code" title="Код комнаты">····</span>
               <span id="peer-pill" class="peer-pill" data-state="waiting" role="status" title="Ждём второго участника">
-                <svg viewBox="0 0 84 36" width="84" height="36" aria-hidden="true" focusable="false">
-                  <g class="bubble-a">
-                    <circle cx="19" cy="18" r="14" />
-                    <text x="19" y="18" dy="0.36em">1</text>
+                <svg viewBox="0 0 108 44" width="108" height="44" aria-hidden="true" focusable="false">
+                  <defs>
+                    <!-- goo: размытие + жёсткий порог альфы = «жидкое» слияние капель -->
+                    <filter id="peer-goo" filterUnits="userSpaceOnUse" x="-10" y="-10" width="130" height="64" color-interpolation-filters="sRGB">
+                      <feGaussianBlur in="SourceGraphic" stdDeviation="5" result="blur" />
+                      <feColorMatrix in="blur" type="matrix" values="1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 22 -10" />
+                    </filter>
+                  </defs>
+                  <g class="goo-wrap">
+                    <g class="goo" filter="url(#peer-goo)">
+                      <circle class="blob-a" cx="22" cy="22" r="16" />
+                      <circle class="blob-plus slide-plus" cx="44" cy="22" r="8" />
+                      <circle class="blob-b slide-b" cx="66" cy="22" r="13" />
+                    </g>
                   </g>
-                  <g class="plus">
-                    <path d="M38.5 18h9M43 13.5v9" />
-                  </g>
-                  <g class="bubble-b">
-                    <circle cx="65" cy="18" r="11.5" />
-                    <text x="65" y="18" dy="0.36em">1</text>
+                  <g class="top">
+                    <circle class="ring-a" cx="22" cy="22" r="16" />
+                    <circle class="ring-plus slide-plus" cx="44" cy="22" r="8" />
+                    <circle class="ring-b slide-b" cx="66" cy="22" r="13" />
+                    <circle class="ghost" cx="66" cy="22" r="13" />
+                    <text class="num-a" x="22" y="22" dy="0.36em">1</text>
+                    <path class="plus" d="M41.5 22h5M44 19.5v5" />
+                    <text class="num-b slide-b" x="66" y="22" dy="0.36em">1</text>
                   </g>
                 </svg>
               </span>
