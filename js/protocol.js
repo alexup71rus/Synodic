@@ -12,7 +12,7 @@ const SynodicProtocol = {
 
   // Сообщения клиент → сервер (WebSocket, JSON)
   CLIENT_SYNC: 'sync',       // { event: { type, currentTime, rate, ts } }
-  CLIENT_VIDEO: 'video',     // { video: { provider, videoId } }
+  CLIENT_VIDEO: 'video',     // { video: { provider, videoId, startAt?, p? } }
   CLIENT_READY: 'ready',     // жест пользователя — напарник готов
   CLIENT_KEEPALIVE: 'keepalive',
 

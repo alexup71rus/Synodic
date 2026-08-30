@@ -11,6 +11,7 @@
     info: $('info'),
     infoModal: $('info-modal'),
     infoClose: $('info-close'),
+    tmdbCredit: $('tmdb-credit'),
     startView: $('start-view'),
     posters: $('posters'),
     roomView: $('room-view'),
@@ -72,10 +73,7 @@
       runBusy('Создаём комнату…', async () => {
         const { source, message } = SynodicLinks.diagnose(elements.videoUrl.value);
         if (!source) throw new Error(message);
-        const code = await SynodicNet.createRoom({
-          provider: source.provider,
-          videoId: source.videoId,
-        });
+        const code = await SynodicNet.createRoom(source);
         openRoom(code, source);
       });
     });
@@ -112,7 +110,7 @@
         showError(message);
         return;
       }
-      connection?.sendVideo({ provider: source.provider, videoId: source.videoId });
+      connection?.sendVideo(source);
       elements.changeVideoForm.hidden = true;
       elements.newVideoUrl.value = '';
       applyVideoChange(source, { local: true });
@@ -142,11 +140,12 @@
     let mountedForVideo = null; // source, по которому смонтирован плеер
 
     connection.on('status', ({ connected, reconnecting }) => {
-      elements.connection.hidden = false;
       if (connected) {
+        elements.connection.hidden = true;
         setConnection('online');
         updatePeerPill(peerOnline ? 'together' : 'waiting');
       } else if (reconnecting) {
+        elements.connection.hidden = false;
         setConnection('error', 'Нет связи');
         updatePeerPill('lost');
       }
@@ -330,11 +329,9 @@
         img.referrerPolicy = 'no-referrer';
         strip.appendChild(img);
       }
-      const note = document.createElement('p');
-      note.className = 'posters-note';
-      note.textContent = 'В топе на этой неделе · по данным TMDB';
-      elements.posters.replaceChildren(strip, note);
+      elements.posters.replaceChildren(strip);
       elements.posters.hidden = false;
+      elements.tmdbCredit.hidden = false;
     } catch {
       // витрина — украшение: без неё стартовый экран просто чище
     }
@@ -386,7 +383,7 @@
     lost: 'Нет связи — переподключаемся',
   };
 
-  /** Жидкий баббл: вторая капля подплывает и сливается; тултип поясняет состояние. */
+  /** Органическая пара: один участник, слитые 1 + 1 или приглушённая потеря связи. */
   function updatePeerPill(state) {
     elements.peerPill.dataset.state = state;
     elements.peerPill.title = PEER_TITLES[state];
