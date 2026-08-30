@@ -1,0 +1,62 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+
+      - name: Use Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: SynodicServe/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci --prefix SynodicServe
+
+      - name: Check JavaScript syntax
+        shell: bash
+        run: |
+          while IFS= read -r source_file; do
+            node --check "$source_file"
+          done < <(find SynodicWeb/js SynodicServe/src SynodicServe/scripts \
+            -type f \( -name '*.js' -o -name '*.mjs' \) -print)
+
+      - name: Audit production dependencies
+        run: npm audit --omit=dev --prefix SynodicServe
+
+      - name: Validate Compose configuration
+        run: docker compose --project-directory SynodicServe config --quiet
+
+      - name: Run smoke test
+        shell: bash
+        run: |
+          npm start --prefix SynodicServe > /tmp/synodic-server.log 2>&1 &
+          server_pid=$!
+          trap 'kill "$server_pid"' EXIT
+
+          for attempt in {1..20}; do
+            if curl --fail --silent http://127.0.0.1:8787/health > /dev/null; then
+              break
+            fi
+            if [ "$attempt" -eq 20 ]; then
+              cat /tmp/synodic-server.log
+              exit 1
+            fi
+            sleep 0.5
+          done
+
+          npm run smoke --prefix SynodicServe
