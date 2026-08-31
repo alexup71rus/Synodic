@@ -2,8 +2,10 @@
 
 const $ = (id) => document.getElementById(id);
 const codeInput = $('code');
+const joinNote = $('join-feedback');
 const feedback = $('feedback');
 let feedbackTimer = null;
+let copyResetTimer = null;
 let latestState = null;
 let isBusy = false;
 
@@ -17,7 +19,7 @@ async function init() {
     refreshUi(status);
   } catch (error) {
     showError(`Расширение не запустилось: ${error.message}`);
-    setConnection('error', 'Ошибка');
+    setConnection('Ошибка');
   }
 }
 
@@ -32,16 +34,7 @@ function bindEvents() {
 
   $('join-form').addEventListener('submit', (event) => {
     event.preventDefault();
-    runAction('Подключаемся…', async () => {
-      const code = normalizedCode();
-      if (code.length !== 4) throw new Error('Введите код из четырёх символов');
-      const result = await send({
-        kind: SynodicProtocol.MSG_JOIN_ROOM,
-        serverUrl: SynodicConfig.SERVER_URL,
-        code,
-      });
-      afterConnect(result);
-    });
+    submitJoin();
   });
 
   $('leave').addEventListener('click', () => runAction('Выходим…', async () => {
@@ -68,6 +61,9 @@ function bindEvents() {
     const normalized = codeInput.value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 4);
     if (codeInput.value !== normalized) codeInput.value = normalized;
     clearFeedback();
+    clearJoinNote();
+    // четвёртый символ — код полный, можно входить без лишнего клика
+    if (normalized.length === 4 && !isBusy) submitJoin();
   });
 
   chrome.runtime.onMessage.addListener(refreshUi);
@@ -76,6 +72,24 @@ function bindEvents() {
 function afterConnect(result) {
   if (!result?.ok) throw new Error(result?.error || 'Не удалось подключиться');
   refreshUi(result);
+}
+
+async function submitJoin() {
+  if (isBusy) return; // уже подключаемся
+  const code = normalizedCode();
+  if (code.length !== 4) {
+    showJoinNote('Введите код из четырёх символов');
+    codeInput.focus();
+    return;
+  }
+  await runAction('Подключаемся…', async () => {
+    const result = await send({
+      kind: SynodicProtocol.MSG_JOIN_ROOM,
+      serverUrl: SynodicConfig.SERVER_URL,
+      code,
+    });
+    afterConnect(result);
+  }, { viaJoin: true });
 }
 
 function refreshUi(message) {
@@ -92,7 +106,7 @@ function refreshUi(message) {
   $('room-view').hidden = !hasRoom;
 
   if (!hasRoom) {
-    setConnection('idle', 'Готов');
+    setConnection(null);
     $('select-tab').hidden = true;
     $('ready').hidden = true;
     return;
@@ -106,7 +120,7 @@ function refreshUi(message) {
   $('ready').hidden = true;
 
   if (current.reconnecting) {
-    setConnection('error', 'Нет связи');
+    setConnection('Нет связи');
     $('room-eyebrow').textContent = 'Комната сохранена';
     $('room-title').textContent = 'Возвращаемся';
     $('room-description').hidden = false;
@@ -114,7 +128,7 @@ function refreshUi(message) {
     return;
   }
 
-  setConnection('online', 'На связи');
+  setConnection(null);
 
   if (!room.videoReady) {
     $('room-eyebrow').textContent = room.peerOnline ? 'Оба на месте' : 'Комната готова';
@@ -122,7 +136,7 @@ function refreshUi(message) {
     $('room-description').hidden = false;
     $('room-description').textContent = current.currentTabMatches === false
       ? 'Комната работает в другой вкладке. Переключите её только если хотите.'
-      : 'Запустите страницу с видео — Synodic найдёт основной плеер сам.';
+      : 'Запустите видео — Synodic найдёт основной плеер сам.';
     return;
   }
 
@@ -171,9 +185,16 @@ function refreshUi(message) {
   }
 }
 
-function setConnection(tone, label) {
-  $('connection').dataset.tone = tone;
+// Индикатор в шапке — только о проблемах: в норме «Готов»/«На связи»
+// ничего не сообщают и только занимают место. Без текста — скрыть.
+function setConnection(label) {
+  const box = $('connection');
+  if (!label) {
+    box.hidden = true;
+    return;
+  }
   $('connection-label').textContent = label;
+  box.hidden = false;
 }
 
 function showReadyButton(label, disabled) {
@@ -189,28 +210,38 @@ function normalizedCode() {
 async function copyRoomCode() {
   const code = latestState?.room?.code;
   if (!code) return;
+  clearTimeout(copyResetTimer);
   try {
     await navigator.clipboard.writeText(code);
-    showFeedback('Код скопирован — отправьте его напарнику', 'success');
+    // подтверждение — галочкой в самой кнопке, без сдвига вёрстки
+    $('copy').dataset.copied = 'true';
+    copyResetTimer = setTimeout(() => delete $('copy').dataset.copied, 2000);
   } catch {
     showError(`Не удалось скопировать. Код комнаты: ${code}`);
   }
 }
 
-async function runAction(progressText, action) {
+async function runAction(progressText, action, { viaJoin = false } = {}) {
   clearFeedback();
-  setBusy(true, progressText);
+  clearJoinNote();
+  setBusy(true, viaJoin ? '' : progressText);
+  if (viaJoin) showJoinNote(progressText, 'progress');
   let succeeded = false;
   try {
     await action();
     succeeded = true;
   } catch (error) {
-    showError(error.message);
-    if (!latestState?.connected) setConnection('error', 'Ошибка');
+    // ошибки входа по коду — строкой у поля, остальные — общей плашкой внизу
+    if (viaJoin) showJoinNote(error.message);
+    else showError(error.message);
+    if (!latestState?.connected) setConnection('Ошибка');
   } finally {
     setBusy(false);
     if (latestState) refreshUi(latestState);
-    if (succeeded) clearFeedback();
+    if (succeeded) {
+      clearFeedback();
+      clearJoinNote();
+    }
   }
 }
 
@@ -232,6 +263,17 @@ function showFeedback(text, tone = 'error', autoHide = true) {
   feedback.dataset.tone = tone;
   feedback.hidden = false;
   if (autoHide) feedbackTimer = setTimeout(clearFeedback, 2800);
+}
+
+function showJoinNote(text, tone = 'error') {
+  joinNote.textContent = text;
+  joinNote.dataset.tone = tone;
+  joinNote.hidden = false;
+}
+
+function clearJoinNote() {
+  joinNote.hidden = true;
+  joinNote.textContent = '';
 }
 
 function clearFeedback() {

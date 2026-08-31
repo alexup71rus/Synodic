@@ -2,7 +2,6 @@
   color-scheme: dark;
   --bg: #19191e;
   --panel: #222126;
-  --panel-hover: #29282d;
   --line: rgba(239, 221, 184, 0.13);
   --line-strong: rgba(239, 221, 184, 0.22);
   --text: #f3ecdf;
@@ -20,7 +19,6 @@
 
 body {
   width: 380px;
-  min-height: 326px;
   margin: 0;
   color: var(--text);
   background:
@@ -33,16 +31,19 @@ button { -webkit-tap-highlight-color: transparent; }
 h1, h2, p { margin: 0; }
 [hidden] { display: none !important; }
 
+/* Экран центрируется в свободном месте между шапкой и плашкой статуса;
+   min-height равен самому высокому экрану (стартовому), чтобы попап не прыгал. */
 .shell {
-  min-height: 326px;
+  display: flex;
+  flex-direction: column;
+  min-height: 313px;
   padding: 20px;
 }
 
 .topbar,
 .brand,
-.join-form,
-.room-code,
-.copy-label,
+.room-share,
+.room-invite,
 .connection {
   display: flex;
   align-items: center;
@@ -50,7 +51,7 @@ h1, h2, p { margin: 0; }
 
 .topbar {
   justify-content: space-between;
-  margin-bottom: 28px;
+  margin-bottom: 18px;
 }
 
 .brand { gap: 10px; }
@@ -61,40 +62,31 @@ h1, h2, p { margin: 0; }
 
 h1 {
   font-family: Iowan Old Style, Palatino Linotype, Book Antiqua, Georgia, serif;
-  font-size: 19px;
+  font-size: 20px;
   line-height: 1;
   letter-spacing: 0.01em;
 }
 
+/* Статус в шапке показывается только при проблемах («Нет связи», «Ошибка»),
+   в остальное время скрыт. */
 .connection {
   justify-content: center;
-  min-height: 28px;
-  padding: 0 10px;
-  border: 1px solid var(--line);
-  border-radius: 10px;
-  color: var(--muted);
-  background: rgba(34, 33, 38, 0.58);
-  font-size: 10px;
-  font-weight: 680;
-  white-space: nowrap;
-  transition: color 160ms ease, border-color 160ms ease, background-color 160ms ease;
-}
-.connection[data-tone="online"] {
-  border-color: rgba(169, 189, 145, 0.2);
-  color: var(--success);
-  background: rgba(87, 107, 65, 0.08);
-}
-.connection[data-tone="waiting"] {
-  border-color: rgba(216, 174, 101, 0.2);
-  color: var(--warning);
-}
-.connection[data-tone="error"] {
-  border-color: rgba(219, 141, 126, 0.23);
+  min-height: 32px;
+  padding: 0 11px;
+  border: 1px solid rgba(219, 141, 126, 0.23);
+  border-radius: 999px;
   color: var(--danger);
   background: rgba(126, 58, 47, 0.08);
+  font-size: 11px;
+  font-weight: 650;
+  white-space: nowrap;
+  animation: view-in 240ms cubic-bezier(0.22, 1, 0.36, 1);
 }
 
-.view { animation: view-in 240ms cubic-bezier(0.22, 1, 0.36, 1); }
+.view {
+  margin: auto 0;
+  animation: view-in 240ms cubic-bezier(0.22, 1, 0.36, 1);
+}
 @keyframes view-in {
   from { opacity: 0; transform: translateY(5px); }
   to { opacity: 1; transform: translateY(0); }
@@ -108,6 +100,7 @@ h2 {
   letter-spacing: -0.035em;
 }
 .room-description {
+  margin-top: 7px;
   color: var(--muted);
   font-size: 12px;
   line-height: 1.55;
@@ -116,24 +109,24 @@ h2 {
 .action-panel {
   padding: 14px;
   border: 1px solid var(--line);
-  border-radius: 17px;
+  border-radius: 16px;
   background: rgba(34, 33, 38, 0.72);
   box-shadow: 0 18px 42px rgba(0, 0, 0, 0.18);
 }
 
 .scope-note {
   max-width: 310px;
-  margin: 14px 4px 0;
+  margin: 12px 4px 0;
   color: var(--faint);
-  font-size: 10px;
+  font-size: 11px;
   line-height: 1.5;
 }
 
 .button {
-  min-height: 44px;
-  padding: 0 16px;
+  min-height: 48px;
+  padding: 0 18px;
   border: 0;
-  border-radius: 12px;
+  border-radius: 13px;
   color: var(--text);
   cursor: pointer;
   font-weight: 720;
@@ -146,21 +139,20 @@ h2 {
 .button-primary {
   color: #29251d;
   background: var(--moon);
-  box-shadow: 0 9px 22px rgba(113, 82, 30, 0.17);
+  box-shadow: 0 10px 22px rgba(113, 82, 30, 0.2);
 }
 .button-primary:hover:not(:disabled) { background: #f6d274; }
 .button-secondary {
-  flex: 0 0 auto;
-  border: 1px solid rgba(242, 199, 92, 0.25);
+  border: 1px solid rgba(242, 199, 92, 0.26);
   color: var(--moon-soft);
   background: #29272a;
 }
 .button-secondary:hover:not(:disabled) {
-  border-color: rgba(242, 199, 92, 0.43);
-  background: #302e31;
+  border-color: rgba(242, 199, 92, 0.48);
+  background: #302d2d;
 }
 .button-quiet {
-  min-height: 42px;
+  min-height: 40px;
   border: 1px solid var(--line);
   color: var(--muted);
   background: transparent;
@@ -171,14 +163,20 @@ h2 {
   color: var(--text);
   background: rgba(34, 33, 38, 0.48);
 }
+/* «Покинуть» — уход из комнаты, при наведении честно подсвечиваем красным */
+.button-quiet.button-danger:hover:not(:disabled) {
+  border-color: rgba(219, 141, 126, 0.34);
+  color: var(--danger);
+  background: rgba(126, 58, 47, 0.12);
+}
 
 .divider {
   display: flex;
   align-items: center;
   gap: 10px;
-  margin: 14px 0 10px;
+  margin: 12px 0 9px;
   color: var(--faint);
-  font-size: 10px;
+  font-size: 11px;
 }
 .divider::before,
 .divider::after {
@@ -188,111 +186,170 @@ h2 {
   content: "";
 }
 
-.join-form { gap: 9px; }
-input {
-  min-width: 0;
-  height: 44px;
-  padding: 0 13px;
-  border: 1px solid var(--line);
-  border-radius: 12px;
-  color: var(--text);
-  background: rgba(18, 19, 24, 0.68);
-  transition: border-color 140ms ease, background-color 140ms ease, box-shadow 140ms ease;
+/* Вход по коду — та же форма, что на сайте: подпись, строка статуса
+   и поле с кнопкой-стрелкой «⏎» внутри. */
+.join-form {
+  display: grid;
+  gap: 9px;
 }
-input:hover { border-color: var(--line-strong); }
-input::placeholder { color: #746f6a; }
+.join-label {
+  padding: 0 2px;
+  color: var(--muted);
+  font-size: 11px;
+  font-weight: 620;
+  line-height: 1.2;
+  text-align: left;
+}
+.join-note {
+  padding: 0 2px;
+  color: var(--danger);
+  font-size: 11px;
+  font-weight: 560;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+.join-note[data-tone="progress"] { color: var(--muted); }
+.join-note:not([hidden]) { animation: note-in 180ms ease; }
+@keyframes note-in {
+  from { opacity: 0; transform: translateY(3px); }
+  to { opacity: 1; transform: none; }
+}
+
+.code-field { position: relative; }
 .code-input {
-  flex: 1;
-  font-size: 15px;
-  font-weight: 780;
-  text-align: center;
+  width: 100%;
+  height: 44px;
+  padding: 0 46px 0 12px;
+  border: 1px solid var(--line);
+  outline: 0;
+  border-radius: 10px;
+  color: var(--text);
+  background: rgba(18, 19, 24, 0.72);
+  font-size: 16px;
+  font-weight: 740;
+  text-align: left;
   text-transform: uppercase;
-  letter-spacing: 0.22em;
+  letter-spacing: 0.16em;
+  transition: border-color 160ms ease, background-color 160ms ease;
 }
-.code-input:not(:placeholder-shown) { padding-left: calc(13px + 0.22em); }
-
-.button:focus-visible,
-input:focus-visible,
-.room-code:focus-visible {
-  outline: none;
-  border-color: rgba(242, 199, 92, 0.72);
-  box-shadow: 0 0 0 3px rgba(242, 199, 92, 0.13);
+.code-input:hover { border-color: var(--line-strong); }
+.code-input:focus {
+  border-color: rgba(242, 199, 92, 0.32);
+  background: rgba(18, 19, 24, 0.92);
+}
+.code-input:disabled { cursor: wait; opacity: 0.62; }
+.code-input::placeholder {
+  color: #77716b;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+}
+.join-go {
+  position: absolute;
+  top: 50%;
+  right: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border: 0;
+  border-radius: 9px;
+  color: var(--faint);
+  background: transparent;
+  cursor: pointer;
+  transform: translateY(-50%);
+  transition: color 140ms ease, background-color 140ms ease;
+}
+.join-go:hover:not(:disabled) { color: var(--moon-soft); background: rgba(242, 199, 92, 0.09); }
+.join-go:disabled { cursor: wait; opacity: 0.55; }
+.join-go svg {
+  width: 15px;
+  height: 15px;
+  overflow: visible;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.7;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 
-.room-summary { padding: 7px 4px 21px; }
+.room-summary { padding: 0 4px 14px; }
 .eyebrow {
-  margin-bottom: 8px;
+  margin-bottom: 6px;
   color: var(--moon-soft);
-  font-size: 10px;
+  font-size: 11px;
   font-weight: 750;
   letter-spacing: 0.04em;
 }
-.room-description { max-width: 320px; margin-top: 9px; }
 
-.room-code {
-  width: 100%;
-  min-height: 82px;
+/* Код комнаты — та же пилюля, что на сайте: копирование подтверждается
+   галочкой внутри кнопки и не сдвигает вёрстку. */
+.room-share {
   justify-content: space-between;
-  padding: 15px 16px;
-  border: 1px solid rgba(242, 199, 92, 0.18);
-  border-radius: 16px;
-  color: var(--text);
-  background: rgba(34, 33, 38, 0.78);
-  cursor: pointer;
-  text-align: left;
-  transition: transform 150ms ease, border-color 150ms ease, background-color 150ms ease, box-shadow 150ms ease;
+  gap: 12px;
 }
-.room-code:hover {
-  border-color: rgba(242, 199, 92, 0.34);
-  background: var(--panel-hover);
-  transform: translateY(-1px);
-}
-.room-code:active { transform: translateY(0) scale(0.995); }
-.room-code-text { min-width: 0; }
-.code-caption {
-  display: block;
-  margin-bottom: 7px;
+.share-label {
   color: var(--muted);
-  font-size: 10px;
+  font-size: 11px;
 }
-#room-code {
-  display: block;
+.room-invite {
+  gap: 9px;
+  height: 40px;
+  padding: 0 9px 0 14px;
+  border: 1px solid rgba(242, 199, 92, 0.2);
+  border-radius: 999px;
   color: var(--moon-soft);
-  font-size: 26px;
+  background: var(--panel);
+  cursor: pointer;
+  transition: color 160ms ease, border-color 160ms ease, background 160ms ease, transform 160ms ease;
+}
+.room-invite:hover { border-color: rgba(242, 199, 92, 0.42); background: #2b292b; }
+.room-invite:active { transform: scale(0.975); }
+.room-code {
+  font-size: 16px;
   font-weight: 780;
   line-height: 1;
-  letter-spacing: 0.18em;
+  letter-spacing: 0.2em;
+  text-indent: 0.2em;
 }
-.copy-label {
-  flex: 0 0 auto;
-  gap: 6px;
-  color: var(--muted);
-  font-size: 10px;
-  font-weight: 650;
-}
-.copy-label svg {
+.room-invite svg {
   width: 15px;
   height: 15px;
+  overflow: visible;
   fill: none;
   stroke: currentColor;
+  stroke-width: 1.65;
   stroke-linecap: round;
   stroke-linejoin: round;
-  stroke-width: 1.6;
 }
-.room-code:hover .copy-label { color: var(--moon-soft); }
+.room-invite .copy-glyph,
+.room-invite .check-glyph { transform-box: fill-box; transform-origin: center; transition: opacity 160ms ease, transform 220ms cubic-bezier(0.22, 1.3, 0.36, 1); }
+.room-invite .check-glyph { opacity: 0; transform: scale(0.55) rotate(-8deg); }
+.room-invite[data-copied="true"] { color: #dce8ce; border-color: rgba(169, 189, 145, 0.42); background: rgba(91, 110, 73, 0.18); }
+.room-invite[data-copied="true"] .copy-glyph { opacity: 0; transform: scale(0.65); }
+.room-invite[data-copied="true"] .check-glyph { opacity: 1; transform: scale(1) rotate(0); }
 
-.room-action { margin-top: 9px; }
-#leave { margin-top: 9px; }
+/* Действия — один ряд постоянной высоты: появление «Смотреть вместе»
+   или «Выбрать эту вкладку» не меняет высоту попапа. */
+.room-actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 14px;
+}
+.room-actions .button { flex: 1 1 auto; }
+.room-actions .button-quiet { flex: 0 0 auto; }
+.room-actions .button:only-child { flex: 1 1 auto; }
 
 .feedback {
   margin-top: 12px;
-  padding: 10px 12px;
+  padding: 11px 13px;
   border: 1px solid rgba(219, 141, 126, 0.22);
   border-radius: 11px;
   color: #e6a699;
   background: rgba(126, 58, 47, 0.11);
-  font-size: 11px;
-  line-height: 1.4;
+  font-size: 12px;
+  line-height: 1.45;
   overflow-wrap: anywhere;
   animation: feedback-in 170ms ease-out;
 }
@@ -306,17 +363,12 @@ input:focus-visible,
   to { opacity: 1; transform: translateY(0); }
 }
 
-.sr-only {
-  position: absolute;
-  width: 1px;
-  height: 1px;
-  padding: 0;
-  margin: -1px;
-  overflow: hidden;
-  clip: rect(0, 0, 0, 0);
-  white-space: nowrap;
-  border: 0;
+/* Единый доступный focus-ring, как на сайте. */
+:where(button, input):focus-visible {
+  outline: 2px solid var(--moon-soft);
+  outline-offset: 3px;
 }
+.code-input:focus-visible { outline: none; }
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
