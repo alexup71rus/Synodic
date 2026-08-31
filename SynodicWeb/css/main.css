@@ -422,6 +422,8 @@ input {
 .button-secondary:hover:not(:disabled) { border-color: rgba(242, 199, 92, 0.48); background: #302d2d; }
 .button-quiet { min-height: 40px; border: 1px solid var(--line); color: var(--muted); background: transparent; font-size: 12px; }
 .button-quiet:hover:not(:disabled) { color: var(--text); border-color: rgba(239, 221, 184, 0.24); }
+/* «Покинуть» — уход из комнаты, при наведении честно подсвечиваем красным */
+.button-quiet.button-danger:hover:not(:disabled) { color: var(--danger); border-color: rgba(219, 141, 126, 0.34); background: rgba(126, 58, 47, 0.12); }
 
 /* ─── комната ──────────────────────────────────────────────────────── */
 
