@@ -22,6 +22,7 @@
     joinDisclosure: $('join-disclosure'),
     joinToggle: $('join-toggle'),
     joinForm: $('join-form'),
+    join: $('join'),
     roomCode: $('room-code'),
     copy: $('copy'),
     peerPill: $('peer-pill'),
@@ -34,7 +35,8 @@
     changeVideoToggle: $('change-video-toggle'),
     changeVideoForm: $('change-video-form'),
     newVideoUrl: $('new-video-url'),
-    startFeedback: $('start-feedback'),
+    createFeedback: $('create-feedback'),
+    joinFeedback: $('join-feedback'),
     feedback: $('feedback'),
   };
 
@@ -84,17 +86,13 @@
         const { source, message } = SynodicLinks.diagnose(elements.videoUrl.value);
         if (!source) throw new Error(message);
         const code = await SynodicNet.createRoom(source);
-        openRoom(code, source);
+        await openRoom(code, source);
       });
     });
 
     elements.joinForm.addEventListener('submit', (event) => {
       event.preventDefault();
-      runBusy('Подключаемся…', async () => {
-        const code = normalizedCode();
-        if (code.length !== 4) throw new Error('Введите код из четырёх символов');
-        openRoom(code, null);
-      });
+      submitJoin();
     });
 
     elements.joinToggle.addEventListener('click', (event) => {
@@ -111,7 +109,9 @@
     elements.code.addEventListener('input', () => {
       const normalized = elements.code.value.toUpperCase().replace(/[^A-Z0-9]/g, '').slice(0, 4);
       if (elements.code.value !== normalized) elements.code.value = normalized;
-      clearFeedback();
+      clearJoinNote();
+      // четвёртый символ — код полный, можно входить без лишнего клика
+      if (normalized.length === 4) submitJoin();
     });
 
     elements.leave.addEventListener('click', leaveRoom);
@@ -129,7 +129,7 @@
     elements.arm.addEventListener('blur', () => {
       SynodicSpotlight?.anticipateViewing(false);
     });
-    elements.videoUrl.addEventListener('input', clearFeedback);
+    elements.videoUrl.addEventListener('input', clearCreateNote);
 
     elements.changeVideoToggle.addEventListener('click', () => {
       const hidden = elements.changeVideoForm.hidden;
@@ -200,7 +200,13 @@
 
   // ─── комната ────────────────────────────────────────────────────────
 
-  function openRoom(code, knownSource) {
+  /**
+   * Открывает комнату. Возвращает промис: resolve — пришёл `joined`,
+   * reject — первое подключение не удалось (4000/4004/таймаут/сеть),
+   * причём показ ошибки остаётся на вызывающем: вход по коду выводит её
+   * в поповер, создание и восстановление — заметкой над формой.
+   */
+  function openRoom(code, knownSource, { viaJoin = false } = {}) {
     closeRoom({ quiet: true });
     sessionStorage.setItem(SESSION_KEY, code);
 
@@ -210,77 +216,103 @@
     engine.onLocalApplied = updateTheaterLight;
 
     let mountedForVideoKey = null;
+    let joined = false;
 
-    connection.on('status', ({ connected, reconnecting }) => {
-      if (connected) {
-        elements.connection.hidden = true;
-        setConnection('online');
-        updatePeerPill(peerOnline ? 'together' : 'waiting');
-      } else if (reconnecting) {
-        elements.connection.hidden = false;
-        setConnection('error', 'Нет связи');
-        updatePeerPill('lost');
-      }
+    return new Promise((resolve, reject) => {
+      connection.on('status', ({ connected, reconnecting }) => {
+        if (connected) {
+          elements.connection.hidden = true;
+          setConnection('online');
+          updatePeerPill(peerOnline ? 'together' : 'waiting');
+        } else if (reconnecting) {
+          elements.connection.hidden = false;
+          setConnection('error', 'Нет связи');
+          updatePeerPill('lost');
+        }
+      });
+
+      connection.on('joined', async (message) => {
+        joined = true;
+        elements.roomCode.textContent = message.code;
+        updateCopyLabel(message.code);
+        elements.code.value = message.code;
+        showRoomView();
+
+        // если напарник уже в комнате, peer-joined нам не придёт
+        if (Number(message.peers) > 1) {
+          peerOnline = true;
+          updatePeerPill('together');
+        }
+
+        resolve();
+
+        const source = knownSource || message.video;
+        if (!source?.videoId) {
+          showPlayerPlaceholder('Напарник ещё не выбрал видео — оно появится здесь само.');
+          return;
+        }
+        const key = sourceKey(source);
+        if (mountedForVideoKey !== key) {
+          mountedForVideoKey = key;
+          await mountPlayer(source);
+        }
+        engine.applySnapshot(message.state);
+        SynodicSpotlight?.setPlaying(armed && !!message.state?.isPlaying);
+      });
+
+      connection.on('peer', ({ online }) => {
+        peerOnline = online;
+        if (online) updatePeerPill('together');
+        else {
+          peerReady = false;
+          updatePeerPill('waiting');
+        }
+      });
+
+      connection.on('peerReady', () => {
+        if (!peerOnline) return;
+        peerReady = true;
+        if (armed) maybeStartTogether();
+        else showFeedback('Второй готов — нажмите «Смотреть вместе»', 'success');
+      });
+
+      connection.on('event', (event) => {
+        engine.handleRemote(event);
+        updateTheaterLight(event);
+      });
+
+      connection.on('video', (video) => {
+        if (!video?.videoId) return;
+        mountedForVideoKey = sourceKey(video);
+        applyVideoChange(video, { local: false });
+      });
+
+      connection.on('closed', ({ code: closeCode }) => {
+        const message = closeFailureMessage(closeCode, viaJoin);
+        if (joined) {
+          // комната была открыта и исчезла (перезапуск сервера)
+          leaveRoom({ quiet: true });
+          showError(message);
+        } else if (viaJoin) {
+          // поповер входа остаётся на месте — только подключение снесли
+          closeRoom();
+          sessionStorage.removeItem(SESSION_KEY);
+        } else {
+          leaveRoom({ quiet: true });
+        }
+        reject(new Error(message));
+      });
     });
+  }
 
-    connection.on('joined', async (message) => {
-      elements.roomCode.textContent = message.code;
-      updateCopyLabel(message.code);
-      elements.code.value = message.code;
-      showRoomView();
-
-      // если напарник уже в комнате, peer-joined нам не придёт
-      if (Number(message.peers) > 1) {
-        peerOnline = true;
-        updatePeerPill('together');
-      }
-
-      const source = knownSource || message.video;
-      if (!source?.videoId) {
-        showPlayerPlaceholder('Напарник ещё не выбрал видео — оно появится здесь само.');
-        return;
-      }
-      const key = sourceKey(source);
-      if (mountedForVideoKey !== key) {
-        mountedForVideoKey = key;
-        await mountPlayer(source);
-      }
-      engine.applySnapshot(message.state);
-      SynodicSpotlight?.setPlaying(armed && !!message.state?.isPlaying);
-    });
-
-    connection.on('peer', ({ online }) => {
-      peerOnline = online;
-      if (online) updatePeerPill('together');
-      else {
-        peerReady = false;
-        updatePeerPill('waiting');
-      }
-    });
-
-    connection.on('peerReady', () => {
-      if (!peerOnline) return;
-      peerReady = true;
-      if (armed) maybeStartTogether();
-      else showFeedback('Второй готов — нажмите «Смотреть вместе»', 'success');
-    });
-
-    connection.on('event', (event) => {
-      engine.handleRemote(event);
-      updateTheaterLight(event);
-    });
-
-    connection.on('video', (video) => {
-      if (!video?.videoId) return;
-      mountedForVideoKey = sourceKey(video);
-      applyVideoChange(video, { local: false });
-    });
-
-    connection.on('closed', ({ code: closeCode }) => {
-      if (closeCode === 4000) showError('Комната заполнена — в ней уже двое');
-      else if (closeCode === 4004) showError('Комната не найдена — возможно, сервер перезапускался');
-      leaveRoom({ quiet: true });
-    });
+  function closeFailureMessage(closeCode, viaJoin) {
+    if (closeCode === 4000) return 'Комната заполнена — в ней уже двое';
+    if (closeCode === 4004) {
+      return viaJoin
+        ? 'Комната не найдена — проверьте код'
+        : 'Комната не найдена — возможно, сервер перезапускался';
+    }
+    return 'Не удалось подключиться — попробуйте ещё раз';
   }
 
   async function mountPlayer(source) {
@@ -430,7 +462,7 @@
       const query = params.toString();
       history.replaceState(null, '', location.pathname + (query ? `?${query}` : ''));
     }
-    openRoom(code, null);
+    openRoom(code, null).catch((error) => showError(error.message));
   }
 
   // ─── мелкие помощники UI ───────────────────────────────────────────
@@ -455,11 +487,14 @@
   function openJoinDisclosure() {
     elements.joinDisclosure.classList.add('is-visible');
     elements.joinToggle.setAttribute('aria-expanded', 'true');
+    // сразу в поле: на телефоне поднимется клавиатура, на десктопе — каретка
+    elements.code.focus();
   }
 
   function closeJoinDisclosure() {
     elements.joinDisclosure.classList.remove('is-visible');
     elements.joinToggle.setAttribute('aria-expanded', 'false');
+    clearJoinNote();
   }
 
   function setConnection(tone, label = '') {
@@ -492,6 +527,32 @@
 
   function normalizedCode() {
     return elements.code.value.trim().toUpperCase();
+  }
+
+  /**
+   * Вход по коду: вручную (кнопка ⏎ / Enter) или автоматически, когда
+   * набран четвёртый символ. Поповер не закрывается — ошибка покажется
+   * в нём же, код останется выделенным для правки или повтора.
+   */
+  function submitJoin() {
+    if (elements.join.disabled) return; // уже подключаемся
+    const code = normalizedCode();
+    if (code.length !== 4) {
+      showJoinNote('Введите код из четырёх символов');
+      elements.code.focus();
+      elements.code.select();
+      return;
+    }
+    setBusy(true);
+    showJoinNote('Подключаемся…', 'progress');
+    openRoom(code, null, { viaJoin: true })
+      .then(() => clearJoinNote())
+      .catch((error) => {
+        showJoinNote(error.message);
+        elements.code.focus();
+        elements.code.select();
+      })
+      .finally(() => setBusy(false));
   }
 
   function sourceKey(source) {
@@ -572,18 +633,42 @@
     showFeedback(text, 'error', false);
   }
 
+  // На стартовом экране заметка живёт у своей формы: ошибки создания —
+  // строкой над формой; ошибки входа по коду — внутри поповера.
   function showFeedback(text, tone = 'error', autoHide = true) {
     clearTimeout(feedbackTimer);
-    const feedback = elements.startView.hidden ? elements.feedback : elements.startFeedback;
+    const feedback = elements.startView.hidden ? elements.feedback : elements.createFeedback;
     feedback.textContent = text;
     feedback.dataset.tone = tone;
     feedback.hidden = false;
     if (autoHide) feedbackTimer = setTimeout(clearFeedback, 3200);
   }
 
+  /** Строка в поповере входа: ошибка висит до правки кода, статус — до исхода. */
+  function showJoinNote(text, tone = 'error') {
+    elements.joinFeedback.textContent = text;
+    elements.joinFeedback.dataset.tone = tone;
+    elements.joinFeedback.hidden = false;
+    // поповер абсолютный: после роста убедимся, что он целиком в кадре —
+    // на мобилке с открытой клавиатурой низ мог уехать за экран
+    requestAnimationFrame(() => {
+      elements.joinForm.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+    });
+  }
+
+  function clearJoinNote() {
+    elements.joinFeedback.hidden = true;
+    elements.joinFeedback.textContent = '';
+  }
+
+  function clearCreateNote() {
+    elements.createFeedback.hidden = true;
+    elements.createFeedback.textContent = '';
+  }
+
   function clearFeedback() {
     clearTimeout(feedbackTimer);
-    [elements.startFeedback, elements.feedback].forEach((feedback) => {
+    [elements.createFeedback, elements.joinFeedback, elements.feedback].forEach((feedback) => {
       feedback.hidden = true;
       feedback.textContent = '';
     });

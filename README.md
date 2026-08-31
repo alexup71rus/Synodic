@@ -42,7 +42,7 @@ HTML5-`<video>` на выбранной вкладке. Сервер обмен�
 
 - [`SynodicWeb/`](SynodicWeb/) — статический фронтенд без сборщика;
 - [`SynodicServe/`](SynodicServe/) — Node.js-сервер комнат, WebSocket-протокол
-  и раздача фронтенда.
+  и раздача фронтенда;
 - [`SynodicExt/`](SynodicExt/) — MV3-расширение Chrome для синхронизации
   HTML5-видео на сторонних сайтах.
 

@@ -59,20 +59,23 @@
           <div class="start-shell">
             <div id="posters" class="posters" hidden></div>
 
-            <form id="create-form" class="create-form" novalidate>
-              <label class="sr-only" for="video-url">Ссылка на видео</label>
-              <input
-                id="video-url"
-                class="url-input"
-                type="text"
-                inputmode="url"
-                autocomplete="off"
-                spellcheck="false"
-                placeholder="Ссылка на YouTube, Rutube или VK Видео"
-                aria-describedby="start-feedback"
-              />
-              <button id="create" class="button button-primary create-submit" type="submit">Создать</button>
-            </form>
+            <div class="create-area">
+              <p id="create-feedback" class="note create-note" role="status" aria-live="polite" hidden></p>
+              <form id="create-form" class="create-form" novalidate>
+                <label class="sr-only" for="video-url">Ссылка на видео</label>
+                <input
+                  id="video-url"
+                  class="url-input"
+                  type="text"
+                  inputmode="url"
+                  autocomplete="off"
+                  spellcheck="false"
+                  placeholder="Ссылка на YouTube, Rutube или VK Видео"
+                  aria-describedby="create-feedback"
+                />
+                <button id="create" class="button button-primary create-submit" type="submit">Создать</button>
+              </form>
+            </div>
 
             <div id="join-disclosure" class="join-disclosure">
               <button id="join-toggle" class="join-toggle" type="button" aria-expanded="false" aria-controls="join-form">
@@ -80,20 +83,28 @@
               </button>
               <form id="join-form" class="join-form" novalidate>
                 <label class="join-label" for="code">Код комнаты</label>
-                <input
-                  id="code"
-                  class="code-input"
-                  inputmode="text"
-                  maxlength="4"
-                  autocomplete="off"
-                  spellcheck="false"
-                  placeholder="ABCD"
-                  aria-describedby="start-feedback"
-                />
-                <button id="join" class="button button-secondary" type="submit">Войти</button>
+                <p id="join-feedback" class="note join-note" role="status" aria-live="polite" hidden></p>
+                <div class="code-field">
+                  <input
+                    id="code"
+                    class="code-input"
+                    inputmode="text"
+                    enterkeyhint="go"
+                    maxlength="4"
+                    autocomplete="off"
+                    spellcheck="false"
+                    placeholder="ABCD"
+                    aria-describedby="join-feedback"
+                  />
+                  <button id="join" class="join-go" type="submit" aria-label="Войти" title="Войти">
+                    <svg viewBox="0 0 24 24" aria-hidden="true">
+                      <path d="M20 5v6a3 3 0 0 1-3 3H6" />
+                      <path d="m9.5 10.5-3.5 3.5 3.5 3.5" />
+                    </svg>
+                  </button>
+                </div>
               </form>
             </div>
-            <p id="start-feedback" class="feedback start-feedback" role="status" aria-live="polite" hidden></p>
           </div>
         </section>
 
@@ -169,20 +180,17 @@
       <button class="info-close" id="info-close" type="button" aria-label="Закрыть">✕</button>
       <h3 id="info-title">Как это работает</h3>
       <ol class="info-steps">
-        <li>Вставьте ссылку на видео и создайте комнату.</li>
-        <li>Отправьте напарнику код или ссылку-приглашение.</li>
-        <li>Когда оба нажмут «Смотреть вместе», видео запустится одновременно.
-            Дальше пауза и перемотка — общие.</li>
+        <li>Один вставляет ссылку на видео и создаёт комнату.</li>
+        <li>Второй заходит по коду или ссылке-приглашению.</li>
+        <li>Оба нажимают «Смотреть вместе» — видео стартует одновременно,
+            дальше пауза и перемотка общие.</li>
       </ol>
       <h4>Поддерживаются</h4>
-      <p>YouTube, Rutube и публичные VK Видео: обычные ссылки, ссылки «поделиться» и embed.</p>
+      <p>YouTube, Rutube и публичные VK Видео — подойдут обычные ссылки и «поделиться».</p>
       <h4>Полезно знать</h4>
       <ul class="info-notes">
-        <li>видео каждый грузит напрямую с видеосервиса — Synodic передаёт только состояние плеера;</li>
-        <li>скорость общая в YouTube и Rutube; VK не даёт управлять ею через официальный плеер;</li>
-        <li>реклама не синхронизируется: если у одного стоит блокировщик, просмотр разойдётся — вернёт пауза на место;</li>
-        <li>полноэкранный режим у каждого свой;</li>
-        <li>в комнате двое, код можно вводить в любом регистре.</li>
+        <li>само видео не пересылается: каждый грузит его напрямую, Synodic синхронизирует только плеер;</li>
+        <li>лимит комнаты — 2 человека.</li>
       </ul>
       <div id="tmdb-credit" class="tmdb-credit" hidden>
         <h4>Постеры</h4>

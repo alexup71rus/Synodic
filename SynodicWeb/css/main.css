@@ -190,6 +190,32 @@ h1 { font-family: Iowan Old Style, Palatino Linotype, Book Antiqua, Georgia, ser
 .posters-strip img:nth-child(3) { transform: translateY(-2px) rotate(1deg); }
 .posters-strip img:nth-child(4) { transform: translateY(5px) rotate(4deg); }
 
+/* однострочные заметки у полей: показываются там, где ошибка случилась,
+   и не двигают раскладку (create-note — absolute над формой,
+   join-note — строка внутри поповера входа по коду) */
+.create-area { position: relative; }
+.note {
+  margin: 0;
+  color: var(--danger);
+  font-size: 12px;
+  font-weight: 560;
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+.note[data-tone="progress"] { color: var(--muted); }
+.note:not([hidden]) { animation: note-in 180ms ease; }
+@keyframes note-in {
+  from { opacity: 0; transform: translateY(3px); }
+  to { opacity: 1; transform: none; }
+}
+.create-note {
+  position: absolute;
+  left: 0;
+  right: 0;
+  bottom: calc(100% + 9px);
+  text-align: center;
+}
+
 .create-form {
   display: flex;
   align-items: center;
@@ -299,12 +325,6 @@ input::placeholder { color: #746f6a; }
   background: rgba(36, 34, 37, 0.96);
   box-shadow: 0 16px 38px rgba(0, 0, 0, 0.24), 0 0 0 3px rgba(242, 199, 92, 0.055);
 }
-.join-form .button {
-  width: 100%;
-  height: 40px;
-  min-height: 40px;
-  border-radius: 10px;
-}
 .join-label {
   padding: 0 2px;
   color: var(--muted);
@@ -313,15 +333,22 @@ input::placeholder { color: #746f6a; }
   line-height: 1.2;
   text-align: left;
 }
+/* ошибка/статус входа по коду — строка между заголовком и полем */
+.join-note {
+  padding: 0 2px;
+  font-size: 11px;
+}
 input {
   min-width: 0;
   color: var(--text);
   background: var(--panel);
 }
+/* поле с кнопкой-стрелкой «⏎» внутри: код короткий, места справа хватает */
+.code-field { position: relative; }
 .code-input {
   width: 100%;
-  height: 40px;
-  padding: 0 12px;
+  height: 44px;
+  padding: 0 46px 0 12px;
   border: 1px solid var(--line);
   outline: 0;
   border-radius: 10px;
@@ -332,6 +359,35 @@ input {
   text-transform: uppercase;
   letter-spacing: 0.16em;
   transition: border-color 160ms ease, background-color 160ms ease;
+}
+.join-go {
+  position: absolute;
+  top: 50%;
+  right: 6px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border: 0;
+  border-radius: 9px;
+  color: var(--faint);
+  background: transparent;
+  cursor: pointer;
+  transform: translateY(-50%);
+  transition: color 140ms ease, background-color 140ms ease;
+}
+.join-go:hover:not(:disabled) { color: var(--moon-soft); background: rgba(242, 199, 92, 0.09); }
+.join-go:disabled { cursor: wait; opacity: 0.55; }
+.join-go svg {
+  width: 15px;
+  height: 15px;
+  overflow: visible;
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1.7;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 .code-input:focus {
   border-color: rgba(242, 199, 92, 0.32);
@@ -507,7 +563,6 @@ input {
   text-align: center;
 }
 .feedback[data-tone="success"] { border-color: rgba(169, 189, 145, 0.19); color: var(--success); background: rgba(87, 107, 65, 0.11); }
-.start-feedback { max-width: 360px; margin-top: 16px; }
 
 .site-footer {
   display: flex;
@@ -599,7 +654,9 @@ input {
   .room-invite { height: 34px; }
   .posters-strip img:nth-child(4) { display: none; }
 
-  /* Клавиатура не должна оставлять форму за центром старого layout viewport. */
+  /* Клавиатура не должна оставлять форму за центром старого layout viewport.
+     Верхний отступ держит место под заметку create-note, чтобы она не
+     наезжала на шапку, когда экран урезан клавиатурой. */
   html[data-keyboard="true"] .site-footer,
   body:has(.start-view input:focus) .site-footer { display: none; }
   html[data-keyboard="true"] .topbar,
@@ -608,7 +665,7 @@ input {
   body:has(.start-view input:focus) .start-view {
     min-height: 0;
     justify-content: flex-start;
-    padding: 12px 0 0;
+    padding: 26px 0 0;
   }
 }
 
