@@ -52,8 +52,10 @@
   let feedbackTimer = null;
   let copyResetTimer = null;
   let infoCloseTimer = null;
+  let hoverOpenTimer = null;
   let viewportFrame = null;
   let viewportSettleTimer = null;
+  const canHover = matchMedia('(hover: hover)').matches;
 
   init();
 
@@ -97,11 +99,37 @@
 
     elements.joinToggle.addEventListener('click', (event) => {
       event.preventDefault();
-      if (elements.joinDisclosure.classList.contains('is-visible')) closeJoinDisclosure();
-      else openJoinDisclosure();
+      clearTimeout(hoverOpenTimer);
+      if (joinBusy()) return;
+      if (elements.joinDisclosure.classList.contains('is-visible')) {
+        closeJoinDisclosure();
+        // осознанный клик при открытом поповере — назад к вводу ссылки
+        elements.videoUrl.focus();
+      } else {
+        openJoinDisclosure();
+      }
+    });
+    // задержка над «Войти по коду» на 300 мс — то же, что клик:
+    // поповер открывается, фокус уходит в поле кода
+    elements.joinToggle.addEventListener('mouseenter', () => {
+      if (!canHover || joinBusy()) return;
+      clearTimeout(hoverOpenTimer);
+      hoverOpenTimer = setTimeout(() => {
+        if (!elements.joinDisclosure.classList.contains('is-visible')) {
+          openJoinDisclosure();
+        }
+      }, 300);
+    });
+    elements.joinToggle.addEventListener('mouseleave', () => clearTimeout(hoverOpenTimer));
+    // клик мимо поповера — закрыть его
+    document.addEventListener('click', (event) => {
+      if (!elements.joinDisclosure.classList.contains('is-visible')) return;
+      if (joinBusy() || elements.joinDisclosure.contains(event.target)) return;
+      closeJoinDisclosure();
     });
     elements.joinForm.addEventListener('keydown', (event) => {
       if (event.key !== 'Escape') return;
+      if (joinBusy()) return;
       closeJoinDisclosure();
       elements.joinToggle.focus();
     });
@@ -489,6 +517,14 @@
     elements.joinToggle.setAttribute('aria-expanded', 'true');
     // сразу в поле: на телефоне поднимется клавиатура, на десктопе — каретка
     elements.code.focus();
+  }
+
+  /**
+   * Подключение по коду в полёте: поповер нельзя закрыть (клик мимо,
+   * Escape, тогл), иначе ошибку входа будет некому показать.
+   */
+  function joinBusy() {
+    return elements.code.disabled;
   }
 
   function closeJoinDisclosure() {
