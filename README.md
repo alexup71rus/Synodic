@@ -7,8 +7,6 @@
 <p align="center">
   Совместный просмотр YouTube, Rutube и VK Видео вдвоём.
   <br>
-  <a href="https://synodic.khodyr.netcraze.pro"><strong>Открыть Synodic</strong></a>
-  ·
   <a href="https://github.com/alexup71rus/Synodic/actions/workflows/ci.yml">CI</a>
 </p>
 
@@ -46,6 +44,13 @@ HTML5-`<video>` на выбранной вкладке. Сервер обмен�
 - [`SynodicExt/`](SynodicExt/) — MV3-расширение Chrome для синхронизации
   HTML5-видео на сторонних сайтах.
 
+## Самостоятельное размещение
+
+Для работы нужен собственный экземпляр SynodicServe. Разместите его на
+доступном обоим участникам сервере и используйте его адрес для сайта
+и расширения. Инструкции по Docker Compose и HTTPS находятся в
+[`SynodicServe/README.md`](SynodicServe/README.md).
+
 ## Локальный запуск
 
 Нужен Node.js 18 или новее.
@@ -67,9 +72,6 @@ npm run smoke
 Витрина постеров опциональна. Чтобы включить её, скопируйте
 `SynodicServe/.env.example` в `SynodicServe/.env` и задайте `TMDB_TOKEN`.
 Без токена интерфейс не показывает пустой блок.
-
-Прод-развёртывание через Docker Compose и особенности HTTPS описаны в
-[`SynodicServe/README.md`](SynodicServe/README.md).
 
 Расширение не требует зависимостей: инструкции по загрузке unpacked-версии,
 smoke-тесту и сборке ZIP находятся в [`SynodicExt/README.md`](SynodicExt/README.md).

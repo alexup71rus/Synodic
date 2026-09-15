@@ -12,6 +12,7 @@ import vm from 'node:vm';
 const root = new URL('../', import.meta.url);
 const tabMessages = [];
 const stored = {};
+const settings = { serverUrl: 'https://synodic.example.com' };
 const contentTabs = new Set();
 let activeTab = { id: 11, url: 'https://www.youtube.com/watch?v=18n-uEz_sPM' };
 let injectionCount = 0;
@@ -62,6 +63,8 @@ const context = vm.createContext({
   importScripts: () => {},
   chrome: {
     runtime: {
+      id: 'synodic-test',
+      getURL: (path) => `chrome-extension://synodic-test/${path}`,
       onMessage: { addListener(listener) { runtimeListener = listener; } },
       sendMessage() { return Promise.resolve(); },
     },
@@ -98,6 +101,11 @@ const context = vm.createContext({
       onAlarm: { addListener(listener) { alarmListener = listener; } },
     },
     storage: {
+      local: {
+        async setAccessLevel() {},
+        async get(key) { return { [key]: settings[key] }; },
+        async set(value) { Object.assign(settings, value); },
+      },
       session: {
         async get(key) { return { [key]: stored[key] }; },
         async set(value) { Object.assign(stored, value); },
@@ -165,10 +173,10 @@ assert.deepEqual(
 
 const connecting = dispatch({
   kind: 'create-room',
-  serverUrl: 'https://synodic.khodyr.netcraze.pro',
+  serverUrl: 'https://synodic.example.com',
 });
 await tick();
-assert.equal(socket.url, 'wss://synodic.khodyr.netcraze.pro/ws?room=ABCD');
+assert.equal(socket.url, 'wss://synodic.example.com/ws?room=ABCD');
 assert.equal(injectionCount, 1, 'content script не подключился к уже открытой вкладке');
 
 socket.open();
@@ -363,7 +371,7 @@ assert.equal(afterTerminalClose.room, null, 'удалённая комната �
 
 const seedConnect = dispatch({
   kind: 'create-room',
-  serverUrl: 'https://synodic.khodyr.netcraze.pro',
+  serverUrl: 'https://synodic.example.com',
 });
 await tick();
 socket.open();
@@ -406,7 +414,7 @@ await checkContentScript();
 
 console.log('✓ extension smoke: routing, media events, readiness, navigation and terminal close');
 
-function dispatch(message, sender = {}) {
+function dispatch(message, sender = { id: 'synodic-test', url: 'chrome-extension://synodic-test/src/popup/popup.html' }) {
   return new Promise((resolve) => {
     const asyncResponse = runtimeListener(message, sender, resolve);
     if (!asyncResponse) queueMicrotask(() => resolve(undefined));

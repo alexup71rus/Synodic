@@ -18,7 +18,24 @@
         </div>
       </header>
 
-      <section id="start-view" class="view start-view">
+      <section id="server-view" class="view server-view" hidden>
+        <h2 id="server-title">Ваш сервер Synodic</h2>
+        <p class="room-description">Укажите адрес, где запущен SynodicServe. У обоих участников должен быть один сервер.</p>
+        <form id="server-form" class="server-form" novalidate>
+          <label class="join-label" for="server-url">Адрес сервера</label>
+          <input id="server-url" class="server-input" type="url" inputmode="url"
+            autocomplete="url" spellcheck="false" placeholder="https://synodic.example.com"
+            aria-describedby="server-note server-error" required />
+          <p id="server-note" class="server-note">Адрес сохранится в этом браузере. Его можно изменить позже.</p>
+          <p id="server-error" class="join-note" role="alert" hidden></p>
+          <div class="server-actions">
+            <button id="save-server" class="button button-primary" type="submit">Сохранить</button>
+            <button id="cancel-server" class="button button-quiet" type="button" hidden>Отмена</button>
+          </div>
+        </form>
+      </section>
+
+      <section id="start-view" class="view start-view" hidden>
         <div class="action-panel">
           <button id="create" class="button button-primary button-wide" type="button">
             Создать комнату
@@ -88,6 +105,10 @@
         </div>
       </section>
 
+      <div id="server-summary" class="server-summary" hidden>
+        <span id="server-address" class="server-address"></span>
+        <button id="edit-server" class="server-edit" type="button">Изменить сервер</button>
+      </div>
       <p id="feedback" class="feedback" role="status" aria-live="polite" hidden></p>
     </main>
 

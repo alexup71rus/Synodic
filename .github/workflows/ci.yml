@@ -41,6 +41,7 @@ jobs:
         run: |
           node SynodicWeb/scripts/net-smoke.mjs
           node SynodicExt/scripts/smoke.mjs
+          node SynodicExt/scripts/settings-smoke.mjs
           SynodicExt/scripts/package.sh
           unzip -tq SynodicExt/dist/synodic-ext-*.zip
 

@@ -14,7 +14,6 @@ importScripts(
   '../shared/video-source.js',
 );
 
-const DEFAULT_SERVER_URL = SynodicConfig.SERVER_URL;
 const ACTIVE_ROOM_KEY = 'activeRoom';
 const RECONNECT_ALARM = 'synodic-reconnect';
 const CONNECT_TIMEOUT_MS = 10000;
@@ -40,7 +39,9 @@ let room = null; // комната + вкладка/frame выбранного �
 let latestState = null; // снапшот для навигации и поздно найденного video
 const videoCandidates = new Map();
 const staleDocumentIds = new Set();
-let currentServerUrl = DEFAULT_SERVER_URL;
+let currentServerUrl = '';
+let configurationError = null;
+let operationQueue = Promise.resolve();
 let connectionAttempt = null;
 let connectionReady = false;
 let reconnectAttempt = 0;
@@ -92,6 +93,17 @@ chrome.alarms.onAlarm.addListener((alarm) => {
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   if (!message?.kind) return false;
+  const popupActions = new Set([
+    SynodicProtocol.MSG_SET_SERVER, SynodicProtocol.MSG_CREATE_ROOM,
+    SynodicProtocol.MSG_JOIN_ROOM, SynodicProtocol.MSG_LEAVE_ROOM,
+    SynodicProtocol.MSG_READY, SynodicProtocol.MSG_SELECT_TAB,
+  ]);
+  if (popupActions.has(message.kind) &&
+      (sender.tab || sender.id !== chrome.runtime.id ||
+       sender.url !== chrome.runtime.getURL('src/popup/popup.html'))) {
+    sendResponse({ ok: false, error: 'Действие доступно только в окне расширения' });
+    return false;
+  }
 
   switch (message.kind) {
     case SynodicProtocol.MSG_GET_STATUS:
@@ -102,23 +114,26 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
         active: !!room && sender.tab?.id === room.tabId,
       })), sendResponse);
       return true;
+    case SynodicProtocol.MSG_SET_SERVER:
+      respond(enqueue(() => setServer(message.serverUrl)), sendResponse);
+      return true;
     case SynodicProtocol.MSG_CREATE_ROOM:
-      respond(initialized.then(() => createRoom(message.serverUrl)), sendResponse);
+      respond(enqueue(createRoom), sendResponse);
       return true;
     case SynodicProtocol.MSG_JOIN_ROOM:
       respond(
-        initialized.then(() => joinRoom(message.serverUrl, message.code)),
+        enqueue(() => joinRoom(message.code)),
         sendResponse,
       );
       return true;
     case SynodicProtocol.MSG_LEAVE_ROOM:
-      respond(initialized.then(leaveRoom), sendResponse);
+      respond(enqueue(leaveRoom), sendResponse);
       return true;
     case SynodicProtocol.MSG_READY:
-      respond(initialized.then(markReady), sendResponse);
+      respond(enqueue(markReady), sendResponse);
       return true;
     case SynodicProtocol.MSG_SELECT_TAB:
-      respond(initialized.then(selectCurrentTab), sendResponse);
+      respond(enqueue(selectCurrentTab), sendResponse);
       return true;
     case SynodicProtocol.MSG_VIDEO_EVENT:
       initialized.then(() => handleVideoEvent(message.event, sender));
@@ -130,6 +145,34 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
       return false;
   }
 });
+
+// Изменения настроек и комнаты выполняются по порядку, включая восстановление.
+function enqueue(action) {
+  const result = operationQueue.then(() => initialized).then(action);
+  operationQueue = result.catch(() => {});
+  return result;
+}
+
+async function setServer(value) {
+  const normalized = SynodicConfig.normalizeServerUrl(value);
+  if (normalized === currentServerUrl) return { ok: true, ...(await statusForPopup()) };
+  try {
+    await chrome.storage.local.set({ [SynodicConfig.STORAGE_KEY]: normalized });
+  } catch {
+    throw new Error('Не удалось сохранить адрес. Попробуйте ещё раз');
+  }
+  const leftRoom = !!room;
+  // Сначала сохраняем адрес: при ошибке записи текущая комната продолжает работать.
+  currentServerUrl = normalized;
+  configurationError = null;
+  await clearConnection({ forgetRoom: true, notify: true, allowStaleSession: true });
+  return { ok: true, leftRoom, ...(await statusForPopup()) };
+}
+
+function requireServer() {
+  if (!currentServerUrl) throw new Error(configurationError || 'Сначала укажите адрес сервера Synodic');
+  return currentServerUrl;
+}
 
 function respond(promise, sendResponse) {
   promise
@@ -154,6 +197,7 @@ function status() {
       startFailed: room.startFailed,
     } : null,
     serverUrl: currentServerUrl,
+    configurationError,
   };
 }
 
@@ -168,9 +212,28 @@ async function statusForPopup() {
 
 async function restoreSession() {
   try {
+    // Контент страниц не может менять настройку через storage.local напрямую.
+    await chrome.storage.local.setAccessLevel({ accessLevel: 'TRUSTED_CONTEXTS' });
+    const settings = await chrome.storage.local.get(SynodicConfig.STORAGE_KEY);
+    if (settings[SynodicConfig.STORAGE_KEY]) {
+      try {
+        currentServerUrl = SynodicConfig.normalizeServerUrl(settings[SynodicConfig.STORAGE_KEY]);
+      } catch {
+        configurationError = 'Сохранённый адрес некорректен. Укажите сервер заново';
+      }
+    }
+  } catch {
+    configurationError = 'Не удалось прочитать настройки сервера. Укажите адрес и сохраните его заново';
+    return;
+  }
+  try {
     const stored = await chrome.storage.session.get(ACTIVE_ROOM_KEY);
     const activeRoom = stored[ACTIVE_ROOM_KEY];
-    if (!isStoredRoom(activeRoom)) return;
+    if (!isStoredRoom(activeRoom) || !currentServerUrl ||
+        activeRoom.serverUrl !== currentServerUrl) {
+      await chrome.storage.session.remove(ACTIVE_ROOM_KEY);
+      return;
+    }
 
     try {
       await chrome.tabs.get(activeRoom.tabId);
@@ -179,7 +242,6 @@ async function restoreSession() {
       return;
     }
 
-    currentServerUrl = activeRoom.serverUrl;
     room = createRoomState(activeRoom.code, activeRoom.role, activeRoom.tabId);
     try {
       await ensureContentScripts(activeRoom.tabId);
@@ -219,12 +281,12 @@ function createRoomState(code, role, tabId) {
   };
 }
 
-async function createRoom(serverUrl) {
-  const base = serverUrl || currentServerUrl;
+async function createRoom() {
+  const base = requireServer();
   try {
     const tabId = await getActiveVideoTabId();
     await ensureContentScripts(tabId);
-    const res = await fetch(new URL('/api/rooms', base), {
+    const res = await fetch(SynodicConfig.endpoint(base, 'api/rooms'), {
       method: 'POST',
       signal: AbortSignal.timeout(CONNECT_TIMEOUT_MS),
     });
@@ -233,17 +295,18 @@ async function createRoom(serverUrl) {
       return { ok: false, error: 'Не удалось подключиться к Synodic' };
     }
     const { code } = await res.json();
-    return connect(base, code, 'host', tabId);
+    return connect(code, 'host', tabId);
   } catch (error) {
     console.error(`[synodic] создание комнаты через ${base}:`, error);
     return { ok: false, error: error.message || 'Не удалось подключиться к Synodic' };
   }
 }
 
-async function joinRoom(serverUrl, code) {
+async function joinRoom(code) {
+  requireServer();
   const tabId = await getActiveVideoTabId();
   await ensureContentScripts(tabId);
-  return connect(serverUrl, code, 'guest', tabId);
+  return connect(code, 'guest', tabId);
 }
 
 async function getActiveVideoTabId() {
@@ -303,10 +366,9 @@ async function selectCurrentTab() {
   return { ok: true, ...(await statusForPopup()) };
 }
 
-async function connect(serverUrl, code, role, tabId) {
+async function connect(code, role, tabId) {
   await clearConnection({ forgetRoom: true, notify: false });
 
-  currentServerUrl = serverUrl || currentServerUrl;
   room = createRoomState(String(code || '').trim(), role, tabId);
   notifyRoomState();
   return openConnection(false);
@@ -445,7 +507,7 @@ async function leaveRoom() {
   return { ok: true, ...status(), currentTabMatches: true };
 }
 
-async function clearConnection({ forgetRoom, notify }) {
+async function clearConnection({ forgetRoom, notify, allowStaleSession = false }) {
   clearReconnectSchedule();
   stopKeepalive();
 
@@ -465,15 +527,25 @@ async function clearConnection({ forgetRoom, notify }) {
     resetRoomState();
     reconnectAttempt = 0;
     await sessionWrite;
-    await chrome.storage.session.remove(ACTIVE_ROOM_KEY);
+    try {
+      await chrome.storage.session.remove(ACTIVE_ROOM_KEY);
+    } catch (error) {
+      // После смены сервера старую сессию нельзя восстановить: restoreSession
+      // сверяет её адрес с уже сохранённой настройкой. Сохранение успешно,
+      // даже если уборка старой записи временно недоступна.
+      console.warn('[synodic] не удалось удалить старую сессию:', error.message);
+      if (!allowStaleSession) {
+        if (notify) notifyRoomState();
+        throw error;
+      }
+    }
   }
   if (notify) notifyRoomState();
 }
 
 function openWebSocket(serverUrl, code) {
-  const url = new URL(serverUrl.replace(/\/+$/, ''));
+  const url = SynodicConfig.endpoint(serverUrl, 'ws');
   url.protocol = url.protocol === 'https:' ? 'wss:' : 'ws:';
-  url.pathname = '/ws';
   url.search = '';
   url.searchParams.set('room', code);
   return new WebSocket(url);

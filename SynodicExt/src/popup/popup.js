@@ -8,11 +8,13 @@ let feedbackTimer = null;
 let copyResetTimer = null;
 let latestState = null;
 let isBusy = false;
+let editingServer = false;
 
 init();
 
 async function init() {
   bindEvents();
+  setBusy(true);
 
   try {
     const status = await send({ kind: SynodicProtocol.MSG_GET_STATUS });
@@ -20,14 +22,35 @@ async function init() {
   } catch (error) {
     showError(`Расширение не запустилось: ${error.message}`);
     setConnection('Ошибка');
+  } finally {
+    setBusy(false);
+    if (latestState) refreshUi(latestState);
   }
 }
 
 function bindEvents() {
+  $('server-form').addEventListener('submit', saveServer);
+  $('edit-server').addEventListener('click', () => {
+    editingServer = true;
+    clearFeedback();
+    $('server-error').hidden = true;
+    $('server-url').removeAttribute('aria-invalid');
+    $('server-url').value = latestState?.serverUrl || '';
+    refreshUi(latestState);
+    $('server-url').focus();
+  });
+  $('cancel-server').addEventListener('click', () => {
+    editingServer = false;
+    $('server-error').hidden = true;
+    refreshUi(latestState);
+  });
+  $('server-url').addEventListener('input', () => {
+    $('server-error').hidden = true;
+    $('server-url').removeAttribute('aria-invalid');
+  });
   $('create').addEventListener('click', () => runAction('Создаём комнату…', async () => {
     const result = await send({
       kind: SynodicProtocol.MSG_CREATE_ROOM,
-      serverUrl: SynodicConfig.SERVER_URL,
     });
     afterConnect(result);
   }));
@@ -74,6 +97,33 @@ function afterConnect(result) {
   refreshUi(result);
 }
 
+async function saveServer(event) {
+  event.preventDefault();
+  if (isBusy) return;
+  $('server-error').hidden = true;
+  clearFeedback();
+  setBusy(true);
+  try {
+    const serverUrl = SynodicConfig.normalizeServerUrl($('server-url').value);
+    const result = await send({ kind: SynodicProtocol.MSG_SET_SERVER, serverUrl });
+    if (!result?.ok) throw new Error(result?.error || 'Не удалось сохранить адрес');
+    editingServer = false;
+    $('server-url').value = result.serverUrl;
+    codeInput.value = result.room?.code || '';
+    refreshUi(result);
+    showFeedback(result.leftRoom
+      ? 'Сервер сохранён. Вы вышли из прежней комнаты.'
+      : 'Адрес сервера сохранён.', 'success', false);
+  } catch (error) {
+    $('server-error').textContent = error.message;
+    $('server-error').hidden = false;
+    $('server-url').setAttribute('aria-invalid', 'true');
+  } finally {
+    setBusy(false);
+    if (latestState) refreshUi(latestState);
+  }
+}
+
 async function submitJoin() {
   if (isBusy) return; // уже подключаемся
   const code = normalizedCode();
@@ -85,7 +135,6 @@ async function submitJoin() {
   await runAction('Подключаемся…', async () => {
     const result = await send({
       kind: SynodicProtocol.MSG_JOIN_ROOM,
-      serverUrl: SynodicConfig.SERVER_URL,
       code,
     });
     afterConnect(result);
@@ -102,8 +151,27 @@ function refreshUi(message) {
 
   const current = latestState;
   const hasRoom = !!current.room && (current.connected || current.reconnecting);
-  $('start-view').hidden = hasRoom;
-  $('room-view').hidden = !hasRoom;
+  const needsServer = !current.serverUrl;
+  const showServer = needsServer || editingServer;
+  $('server-view').hidden = !showServer;
+  $('start-view').hidden = showServer || hasRoom;
+  $('room-view').hidden = showServer || !hasRoom;
+  $('server-summary').hidden = showServer;
+  $('server-address').textContent = current.serverUrl || '';
+  $('server-address').title = current.serverUrl || '';
+  $('cancel-server').hidden = needsServer;
+  $('server-title').textContent = needsServer ? 'Ваш сервер Synodic' : 'Настройки сервера';
+  $('server-note').textContent = hasRoom
+    ? 'Если изменить адрес, вы выйдете из текущей комнаты.'
+    : 'Адрес сохранится в этом браузере. Его можно изменить позже.';
+  if (showServer) {
+    setConnection(null);
+    if (current.configurationError && !$('server-error').textContent) {
+      $('server-error').textContent = current.configurationError;
+      $('server-error').hidden = false;
+    }
+    return;
+  }
 
   if (!hasRoom) {
     setConnection(null);

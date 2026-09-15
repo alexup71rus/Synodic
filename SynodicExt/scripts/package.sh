@@ -8,7 +8,6 @@ VERSION="$(cd "$ROOT" && node -p "require('./manifest.json').version")"
 ARCHIVE="$DIST_DIR/synodic-ext-${VERSION}.zip"
 UNPACKED="$DIST_DIR/synodic-ext-${VERSION}-unpacked"
 
-node "$ROOT/scripts/configure.mjs"
 mkdir -p "$DIST_DIR"
 rm -f "$ARCHIVE"
 

@@ -14,6 +14,7 @@ globalThis.SynodicProtocol = Object.freeze({
 
   // Сообщения popup -> service worker
   MSG_GET_STATUS: 'get-status',
+  MSG_SET_SERVER: 'set-server',
   MSG_CREATE_ROOM: 'create-room',
   MSG_JOIN_ROOM: 'join-room',
   MSG_LEAVE_ROOM: 'leave-room',
